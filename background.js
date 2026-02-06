@@ -1,0 +1,266 @@
+/**
+ * Screener.in Filter Background Script
+ * Handles data aggregation (scraping) and storage management.
+ */
+
+const BASE_DELAY = 350;
+
+/**
+ * Utility to pause execution
+ * @param {number} ms 
+ */
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+/**
+ * Fetch with automatic retries and exponential backoff for rate limits
+ * @param {string} url 
+ * @param {number} retries 
+ * @returns {Promise<string>}
+ */
+// Global counter for persistent backoff scaling
+let rateLimitLevel = 0;
+
+async function fetchWithBackoff(url, retries = 3) {
+    let currentDelay = BASE_DELAY;
+
+    for (let i = 0; i < retries; i++) {
+        try {
+            console.log(`Fetching: ${url} (Attempt ${i + 1})`);
+            const response = await fetch(url);
+
+            if (response.status === 429 || response.status === 403) {
+                rateLimitLevel++; // Increment global level
+
+                // Modified backoff: start at 5s, grow by double (2x) based on GLOBAL level
+                // Level 1: 5s, Level 2: 10s, Level 3: 20s
+                const backoffTime = 5000 * Math.pow(2, rateLimitLevel - 1);
+                const seconds = (backoffTime / 1000).toFixed(1);
+
+                console.warn(`Rate limit hit (${response.status}) on ${url}. Level: ${rateLimitLevel}. Pausing ${seconds}s...`);
+
+                // Visible Backoff
+                if (typeof updateState === 'function') {
+                    updateState({ details: `Rate limit hit (${response.status}).\nPausing for ${seconds}s...` });
+                }
+
+                await delay(backoffTime);
+                continue;
+            }
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            // Success: Slowly reduce rate limit level
+            if (rateLimitLevel > 0) rateLimitLevel = Math.max(0, rateLimitLevel - 0.05);
+
+            return await response.text();
+
+        } catch (err) {
+            console.error(`Fetch failed for ${url}: ${err.message}`);
+            if (i === retries - 1) throw err;
+
+            if (typeof updateState === 'function') {
+                updateState({ details: `Request failed. Retrying (${i + 1}/${retries})...` });
+            }
+            await delay(2000 * (i + 1));
+        }
+    }
+}
+
+/**
+ * Scrapes the main market page to get a list of all industries
+ * @returns {Promise<Array<{url: string, name: string}>>}
+ */
+async function fetchIndustryList() {
+    const text = await fetchWithBackoff('https://www.screener.in/market/');
+
+    // Regex to capture URL and Industry Name from Screener's market page
+    const industryRegex = /<a[^>]+href="(\/market\/IN[^"]+?\/)"[^>]*>([\s\S]*?)<\/a>/g;
+    const matches = [...text.matchAll(industryRegex)];
+
+    const industryMap = new Map();
+
+    matches.forEach(m => {
+        const url = `https://www.screener.in${m[1]}`;
+        const name = m[2].trim().replace(/&amp;/g, '&');
+        // Avoid urls with query params which might be duplicates or subsets
+        if (!url.includes("?")) {
+            industryMap.set(url, name);
+        }
+    });
+
+    return Array.from(industryMap.entries()).map(([url, name]) => ({ url, name }));
+}
+
+/**
+ * Scrapes an individual industry page for stock symbols
+ * @param {string} url 
+ * @returns {Promise<string[]>} List of stock symbols
+ */
+async function scrapeIndustryPage(url) {
+    const stocks = new Set();
+    let nextUrl = `${url}?limit=100`;
+
+    let pages = 0;
+    while (nextUrl && pages < 10) { // Limit to 10 pages per industry to avoid infinite loops
+        try {
+            const text = await fetchWithBackoff(nextUrl);
+
+            // Extract stock symbols from company links
+            const stockRegex = /href="\/company\/([A-Za-z0-9-]+)\//g;
+            const stockMatches = [...text.matchAll(stockRegex)];
+
+            if (stockMatches.length === 0) break;
+
+            stockMatches.forEach(m => {
+                const symbol = m[1];
+                if (symbol.toLowerCase() !== "industry") {
+                    stocks.add(symbol);
+                }
+            });
+
+            // If we have fewer than 50 stocks, it's likely the last page (Screener uses 50-100 per page)
+            if (stockMatches.length < 50) {
+                nextUrl = null;
+            } else {
+                pages++;
+                const currentUrlObj = new URL(nextUrl);
+                let pageNum = parseInt(currentUrlObj.searchParams.get("page") || "1");
+                currentUrlObj.searchParams.set("page", pageNum + 1);
+                nextUrl = currentUrlObj.toString();
+            }
+
+            await delay(BASE_DELAY + Math.random() * 50);
+
+        } catch (e) {
+            console.error("Error scraping " + nextUrl, e);
+            break;
+        }
+    }
+
+    return Array.from(stocks);
+}
+
+/**
+ * Builds the complete industry database
+ * @param {Function} sendProgress Callback to send status updates
+ */
+async function buildDatabase(sendProgress) {
+    try {
+        console.log("Starting database build...");
+        sendProgress({ status: "Fetching industry list...", progress: 0 });
+
+        const industries = await fetchIndustryList();
+        console.log(`Found ${industries.length} industries.`);
+
+        const stockToIndustry = {};
+        const timestamp = Date.now();
+
+        const stats = {
+            totalIndustries: industries.length,
+            industriesScraped: 0,
+            stocksFound: 0,
+            startTime: timestamp,
+            errors: []
+        };
+
+        // Reset State
+        updateState({
+            isActive: true,
+            status: "Fetching industry list...",
+            progress: 0,
+            details: "",
+            error: false
+        });
+
+        let completed = 0;
+
+        for (const ind of industries) {
+            try {
+                const symbols = await scrapeIndustryPage(ind.url);
+
+                symbols.forEach(sym => {
+                    stockToIndustry[sym] = ind.name;
+                });
+
+                stats.industriesScraped++;
+                stats.stocksFound += symbols.length;
+
+            } catch (err) {
+                console.error(`Failed to scrape ${ind.name}`, err);
+                stats.errors.push(`Failed: ${ind.name}`);
+            }
+
+            completed++;
+            const percent = Math.round((completed / industries.length) * 100);
+            sendProgress({
+                isActive: true,
+                status: `Scraping: ${ind.name} (${completed}/${industries.length})`,
+                progress: percent,
+                details: `Stocks found so far: ${stats.stocksFound}`
+            });
+        }
+
+        console.log(`Database built. Saving ${Object.keys(stockToIndustry).length} stocks.`);
+
+        await chrome.storage.local.set({
+            stockMap: stockToIndustry,
+            lastUpdated: timestamp,
+            dbStats: stats
+        });
+
+        sendProgress({
+            isActive: false,
+            status: "Complete!",
+            progress: 100,
+            count: Object.keys(stockToIndustry).length,
+            stats: stats
+        });
+
+    } catch (err) {
+        console.error("Database Build Failed:", err);
+        sendProgress({
+            isActive: false,
+            status: "Error: " + err.message,
+            progress: 0,
+            error: true
+        });
+    }
+}
+
+// Track global state
+let scrapingState = {
+    isActive: false,
+    status: "",
+    progress: 0,
+    details: "",
+    error: false
+};
+
+function updateState(newState) {
+    scrapingState = { ...scrapingState, ...newState };
+    // Broadcast to any open popups
+    chrome.runtime.sendMessage({ action: "progressUpdate", data: scrapingState }).catch(() => { });
+}
+
+/**
+ * Message Listener for Extension Communication
+ */
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === "startScrape") {
+        if (scrapingState.isActive) {
+            sendResponse({ started: false, reason: "Already active" });
+            return;
+        }
+
+        buildDatabase((progressData) => {
+            updateState(progressData);
+        });
+        sendResponse({ started: true });
+    } else if (request.action === "getScrapeStatus") {
+        sendResponse(scrapingState);
+    }
+    return true; // Keep channel open
+});
+

@@ -1,0 +1,43 @@
+{
+  "manifest_version": 3,
+  "name": "Screener.in Industry Filter",
+  "version": "2.0.0",
+  "description": "Adds industry filtering to Screener.in results.",
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://www.screener.in/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.screener.in/upcoming-results/*",
+        "https://www.screener.in/screens/*",
+        "https://www.screener.in/results/latest/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "styles.css"
+      ]
+    }
+  ]
+}
