@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [4.1.1] - 2026-02-07
+### Documentation
+- Updated `README.md` to use consistent `% PF` (Portfolio) terminology instead of `% Pt`.
+
 ## [4.1.0] - 2026-02-07
 ### Fixed
 - **Mobile Filter**: Fixed issue where the industry filter would not function on mobile views due to Screener.in moving the sidebar content into a modal. Implemented `MutationObserver` to re-initialize the filter logic when it detects this layout change.
@@ -15,7 +19,7 @@ All notable changes to this project will be documented in this file.
 ## [4.0.0] - 2026-02-07
 ### Major Changes
 - **Portfolio Analysis**: Full support for `screener.in/people/*` pages with robust portfolio value calculations.
-  - Adds **"₹ Cr"** and **"% Pt"** columns to the historical Shareholdings table initially populated with "..." placeholder.
+  - Adds **"₹ Cr"** and **"% PF"** columns to the historical Shareholdings table initially populated with "..." placeholder.
   - **Refined Calculation**: Logic now strictly uses the **last reported quarter** (latest column) for holding percentages. If a stock was exited in the last quarter (empty cell), it correctly computes as 0 value.
   - **Robustness**: Implemented smart table detection using date-pattern matching headers (e.g., "Jun 2025") to avoid mis-targeting summary tables like "Bulk Deals".
   - **Performance**: Shifted fetching logic to `background.js` to utilize a global exponential backoff strategy, preventing rate-limit issues on large portfolios.

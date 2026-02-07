@@ -228,7 +228,7 @@ async function startPortfolioAnalysis() {
 
         const thPercent = document.createElement('th');
         thPercent.className = 'portfolio-header';
-        thPercent.innerText = '% Pt'; // Even shorter
+        thPercent.innerText = '% PF'; // Even shorter
         thPercent.style.textAlign = 'right';
         thPercent.title = "Percentage of visible portfolio";
 

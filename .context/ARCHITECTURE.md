@@ -63,5 +63,5 @@ sequenceDiagram
     Content->>Background: Message: "fetchMarketCap" (per holding)
     Background->>Screener: GET /company/url
     Background->>Content: Returns Market Cap
-    Content->>Content: Updates "Value" & "% Pt" cells
+    Content->>Content: Updates "Value" & "% PF" cells
 ```

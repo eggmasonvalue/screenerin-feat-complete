@@ -18,7 +18,7 @@ A powerful Chrome Extension that adds high-impact features to India's most belov
 - **Latest Results Analytics**: Among the filtered entities, view Median, Average, and Standard Deviation for YoY growth in Sales, EBITDA, Net Profit, and EPS.
 
 ### 3. Superinvestor portfolio analysis
-  - `screener.in/people/*/#shareholdings` pages now have **"₹ Cr"** (Value) and **"% Pt"** (Percentage of Portfolio) columns.
+  - `screener.in/people/*/#shareholdings` pages now have **"₹ Cr"** (Value) and **"% PF"** (Percentage of Portfolio) columns.
 
 ### 4. Seamless UI/UX
 - **Dark Mode Support**: Adaptive UI that matches Screener.in's native Light and Dark themes.
