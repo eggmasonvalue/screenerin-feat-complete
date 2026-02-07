@@ -13,6 +13,7 @@
 | **Pagination Support** | ✅ Done | "Deep Scan": Robustly fetches next pages for both Table and List views; handles complex DOM adoption. |
 | **Specialized DOM Handling** | ✅ Done | Distinct strategies (`TableStrategy`, `ListStrategy`) for different page layouts. |
 | **Extension Icon** | ✅ Done | Custom SVG (Bars + Funnel). |
+| **Portfolio Analysis** | ✅ Done | Adds "% Port" and "Value (Cr)" to People pages. Fetches Market Cap for each holding. |
 | **Context Menu** | ❌ Not Planned | Context menu actions not required for v1. |
 
 ## UX Decisions

@@ -15,6 +15,13 @@ Works on multiple Screener.in pages:
 - **[Concalls](https://www.screener.in/concalls/)**
 - **[Upcoming Concalls](https://www.screener.in/concalls/upcoming/)** Note: this doesn't work. It's a placeholder for when screener.in adds filtering support for upcoming concalls.
 
+### 3. Aggregate Statistics
+- **Latest Results Analytics**: Among the filtered entities, view Median, Average, and Standard Deviation for:
+  - Sales
+  - EBITDA
+  - Net Profit
+  - EPS
+
 ## 🛠️ Installation
 
 1.  **Clone/Download** this repository.
@@ -37,6 +44,7 @@ Works on multiple Screener.in pages:
 
 3. **Superuser tips**:
     - Combine this with a .pdf batch downloader chrome extension to download all the earnings call transcripts with a single click for uploading to RAG based LLM setups.
+    - For mobile, use browsers like Microsoft Edge or Quetta that lets you add custom extensions.
 
 ## 🏗️ Architecture
 

@@ -1,18 +1,55 @@
+/* CSS Variables for Adaptive Theming */
+:root {
+  --sif-bg: #fff;
+  --sif-text: #333;
+  --sif-border: #ced4da;
+  --sif-hover: #f8f9fa;
+  --sif-secondary: #6c757d;
+  --sif-shadow: rgba(0, 0, 0, 0.1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --sif-bg: #1e1e1e;
+    /* Common dark theme card color */
+    --sif-text: #e0e0e0;
+    --sif-border: #444;
+    --sif-hover: #333;
+    --sif-secondary: #adb5bd;
+    --sif-shadow: rgba(0, 0, 0, 0.4);
+  }
+}
+
+/* Explicit overrides if the site uses a specific class for Dark Mode (e.g. .dark) */
+/* Just in case Screener uses this convention */
+html.dark,
+body.dark {
+  --sif-bg: #1e1e1e;
+  --sif-text: #e0e0e0;
+  --sif-border: #444;
+  --sif-hover: #333;
+  --sif-secondary: #adb5bd;
+}
+
 /* Custom Combobox Styles */
 .screener-combobox-container {
   position: relative;
   width: 100%;
+  display: flex;
+  align-items: center;
 }
 
 .screener-combobox-input {
   width: 100%;
-  padding: 8px 10px;
+  padding: 8px 30px 8px 10px;
+  /* Right padding for clear button */
   border-radius: 4px;
-  border: 1px solid #ced4da;
-  background-color: white;
+  border: 1px solid var(--sif-border);
+  background-color: var(--sif-bg);
   box-sizing: border-box;
   font-size: 13px;
-  color: #333;
+  color: var(--sif-text);
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .screener-combobox-input:focus {
@@ -21,54 +58,82 @@
   box-shadow: 0 0 0 2px rgba(102, 175, 233, 0.3);
 }
 
+/* Clear Button */
+.screener-combobox-clear {
+  position: absolute;
+  right: 10px;
+  cursor: pointer;
+  color: var(--sif-secondary);
+  font-size: 18px;
+  display: none;
+  line-height: 1;
+}
+
+.screener-combobox-clear:hover {
+  color: var(--sif-text);
+}
+
+/* Dropdown List */
 .screener-combobox-list {
   position: absolute;
   top: 100%;
   left: 0;
   right: 0;
   z-index: 1000;
-  background: white;
-  border: 1px solid #ced4da;
+  background: var(--sif-bg);
+  border: 1px solid var(--sif-border);
   border-radius: 0 0 4px 4px;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 6px var(--sif-shadow);
   max-height: 250px;
   overflow-y: auto;
   display: none;
-  /* Hidden by default */
-  margin: 0;
+  margin: 4px 0 0 0;
   padding: 0;
   list-style: none;
 }
 
-.screener-combobox-list li {
-  padding: 8px 10px;
+.screener-combobox-list.show {
+  display: block;
+}
+
+/* List Items */
+/* List Items - High Specificity */
+.screener-combobox-list .screener-combobox-item {
+  padding: 10px 14px !important;
   cursor: pointer;
-  font-size: 13px;
-  border-bottom: 1px solid #f8f9fa;
-  color: #333;
+  font-size: 13px !important;
+  line-height: 1.5 !important;
+  border-bottom: 1px solid var(--sif-border);
+  border-bottom-color: transparent;
+  color: var(--sif-text) !important;
+  display: block !important;
+  box-sizing: border-box !important;
 }
 
-.screener-combobox-list li:last-child {
-  border-bottom: none;
+.screener-combobox-list .screener-combobox-item+.screener-combobox-item {
+  border-top: 1px solid var(--sif-hover);
 }
 
-.screener-combobox-list li:hover,
-.screener-combobox-list li.focused {
-  background-color: #f1f3f6;
-  color: #000;
+.screener-combobox-list .screener-combobox-item:hover,
+.screener-combobox-list .screener-combobox-item.focused {
+  background-color: var(--sif-hover) !important;
+  color: var(--sif-text) !important;
 }
 
-.screener-combobox-list li.selected {
-  background-color: #e8f0fe;
-  color: #1a73e8;
-  font-weight: 500;
+.screener-combobox-item.no-matches {
+  color: var(--sif-secondary);
+  cursor: default;
+}
+
+.screener-combobox-item.no-matches:hover {
+  background-color: transparent;
 }
 
 /* Sidebar structure */
 .screener-industry-filter {
   margin-bottom: 20px;
   padding-bottom: 15px;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--sif-border);
   font-size: 13px;
 }
 
@@ -76,28 +141,139 @@
   display: block;
   font-weight: 500;
   margin-bottom: 8px;
-  color: #444;
+  color: var(--sif-text);
 }
 
 /* Loading/Status indicator */
 .screener-scanner-status {
-  padding: 10px;
-  background: #f1f3f6;
-  border: 1px solid #e1e4e8;
-  margin-top: 15px;
-  border-radius: 4px;
-  color: #444;
+  padding: 16px;
+  background: var(--sif-bg);
+  border: 1px solid var(--sif-border);
+  margin-bottom: 24px;
+  border-radius: 8px;
+  color: var(--sif-text);
+  box-shadow: 0 1px 3px var(--sif-shadow);
+}
+
+.screener-stats-grid {
+  display: grid;
+  grid-template-columns: auto repeat(3, 1fr);
+  gap: 12px 24px;
+  margin-top: 16px;
+  font-size: 14px;
+  align-items: center;
+}
+
+.screener-stats-header {
+  font-weight: 600;
+  color: var(--sif-secondary);
+  font-size: 12px;
+  text-transform: uppercase;
+  text-align: right;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--sif-border);
+}
+
+.screener-stats-label {
+  font-weight: 500;
+  color: var(--sif-secondary);
+}
+
+.screener-stats-value {
+  text-align: right;
+  font-family: 'Roboto Mono', monospace;
+  /* Fallback if Roboto Mono isn't available */
+  font-variant-numeric: tabular-nums;
 }
 
 .button-primary.load-all-btn {
-  width: 100%;
-  margin-top: 10px;
-  background-color: #2c3e50;
-  border-color: #2c3e50;
-  font-size: 12px;
+  width: auto;
+  margin-top: 0;
+  /* Fixed alignment */
+  padding: 8px 16px;
+  background-color: var(--sif-bg);
+  color: var(--sif-text);
+  border: 1px solid var(--sif-border);
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background-color 0.2s;
 }
 
-.button-primary.load-all-btn:disabled {
-  opacity: 0.7;
-  cursor: wait;
+.button-primary.load-all-btn:hover {
+  background-color: var(--sif-hover);
+}
+
+
+/* Portfolio Analysis Styles */
+.portfolio-header {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.portfolio-cell {
+  text-align: right;
+  font-feature-settings: "tnum";
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.portfolio-val {
+  font-weight: 500;
+}
+
+.portfolio-pct {
+  color: var(--sif-secondary);
+}
+
+/* Tooltip Styles */
+.screener-warning-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  border: 1px solid #f0ad4e;
+  border-radius: 50%;
+  color: #f0ad4e;
+  cursor: help;
+  font-size: 10px;
+  font-weight: 700;
+  font-family: sans-serif;
+  line-height: 1;
+}
+
+.screener-tooltip {
+  visibility: hidden;
+  width: 200px;
+  background-color: var(--sif-bg);
+  /* Use theme bg */
+  color: var(--sif-text);
+  text-align: left;
+  border-radius: 4px;
+  padding: 8px;
+  position: absolute;
+  z-index: 1001;
+  bottom: 125%;
+  /* Position above */
+  right: 0;
+  /* Anchor right */
+  opacity: 0;
+  transition: opacity 0.3s;
+  font-size: 11px;
+  line-height: 1.4;
+  border: 1px solid var(--sif-border);
+  box-shadow: 0 2px 5px var(--sif-shadow);
+  font-weight: normal;
+}
+
+.screener-warning-icon:hover .screener-tooltip {
+  visibility: visible;
+  opacity: 1;
+}
+
+.screener-warning-container {
+  position: relative;
+  float: right;
+  display: inline-block;
 }

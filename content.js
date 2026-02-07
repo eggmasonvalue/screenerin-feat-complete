@@ -17,6 +17,18 @@ const DELAY_BETWEEN_PAGES = 300;
 // Strategies
 // -----------------------------------------------------
 
+const PeopleStrategy = {
+    name: 'PeopleStrategy',
+    matches: (doc) => {
+        return window.location.pathname.includes('/people/') &&
+            !!doc.querySelector('.responsive-holder table.data-table');
+    },
+    // No "items" in the filtering sense, but we need to init the analysis
+    init: () => {
+        startPortfolioAnalysis();
+    }
+};
+
 const TableStrategy = {
     name: 'TableStrategy',
 
@@ -63,15 +75,13 @@ const TableStrategy = {
         const table = document.querySelector('.responsive-holder table') ||
             document.querySelector('table.data-table');
 
-        const card = table ? table.closest('.card') : null;
-
-        if (card) {
-            // If card exists, we return it so we can appendChild (puts at bottom inside card)
-            return card;
+        // For TableStrategy, we want it just above the responsive holder or the table itself
+        if (table) {
+            const holder = table.closest('.responsive-holder');
+            if (holder) return holder.parentElement;
+            return table.parentElement;
         }
-
-        // Fallback: parent of table
-        return table ? table.parentElement : null;
+        return null;
     },
 
     cleanupItems: () => {
@@ -127,7 +137,51 @@ const ListStrategy = {
     },
 
     getStatusInjectionPoint: () => {
-        return document.querySelector('.mark-visited');
+        // Find the container of the list
+        const listContainer = document.querySelector('.mark-visited');
+        // We want to return the parent so we can insert *before* the list
+        return listContainer ? listContainer.parentElement : document.querySelector('#content-area'); // Fallback
+    },
+
+    getMetrics: (item) => {
+        const nextSibling = item.nextElementSibling;
+        if (!nextSibling) return {};
+
+        // In the list view, the details are in the *next* sibling .responsive-holder usually, 
+        // but user says it's a table. Let's find the table in the sibling.
+        // The structure is usually ItemRow -> DetailsRow.
+        const table = nextSibling.querySelector('table.data-table');
+
+        if (!table) return {
+            'Sales': null, 'EBIDT': null, 'Net Profit': null, 'EPS': null
+        };
+
+        const getVal = (selector) => {
+            const row = table.querySelector(selector);
+            if (!row) return null;
+            // The value is in the 2nd column (index 1)
+            const cell = row.querySelectorAll('td')[1];
+            if (!cell) return null;
+
+            const text = cell.innerText.trim(); // "⇡ 14%" or "⇣ 67%"
+            const isDown = text.includes('⇣') || cell.querySelector('.down');
+
+            // Extract number
+            const match = text.match(/([\d\.]+)/);
+            if (match) {
+                let val = parseFloat(match[1]);
+                if (isDown) val = -val;
+                return val;
+            }
+            return null;
+        };
+
+        return {
+            'Sales': getVal('tr[data-sales]'),
+            'EBIDT': getVal('tr[data-ebidt]'),
+            'Net Profit': getVal('tr[data-net-profit]'),
+            'EPS': getVal('tr[data-eps]')
+        };
     },
 
     cleanupItems: () => {
@@ -138,14 +192,203 @@ const ListStrategy = {
 let activeStrategy = null;
 
 // -----------------------------------------------------
+// Analysis Logic (People Page)
+// -----------------------------------------------------
+
+async function startPortfolioAnalysis() {
+    const table = document.querySelector('.responsive-holder table.data-table');
+    if (!table) return;
+
+    // 1. Inject Columns
+    const theadRow = table.querySelector('thead tr');
+    if (theadRow && !theadRow.querySelector('.portfolio-header')) {
+        const thPercent = document.createElement('th');
+        thPercent.className = 'portfolio-header';
+        thPercent.innerText = '% Port';
+        thPercent.style.textAlign = 'right';
+
+        const thValue = document.createElement('th');
+        thValue.className = 'portfolio-header';
+        thValue.innerText = 'Value (Cr)';
+        thValue.style.textAlign = 'right';
+
+        theadRow.appendChild(thValue);
+        theadRow.appendChild(thPercent);
+    }
+
+    const rows = Array.from(table.querySelectorAll('tbody tr'));
+    const holdings = [];
+
+    // 2. Parse Rows & Setup Placeholders
+    rows.forEach(row => {
+        // Skip if already has cells
+        if (row.querySelector('.portfolio-cell')) return;
+
+        const tdValue = document.createElement('td');
+        tdValue.className = 'portfolio-cell portfolio-val';
+        tdValue.style.textAlign = 'right';
+        tdValue.innerText = '...';
+
+        const tdPercent = document.createElement('td');
+        tdPercent.className = 'portfolio-cell portfolio-pct';
+        tdPercent.style.textAlign = 'right';
+        tdPercent.innerText = '-';
+
+        row.appendChild(tdValue);
+        row.appendChild(tdPercent);
+
+        // Extract Data
+        const link = row.querySelector('td.text a');
+        if (!link) return;
+
+        const url = link.href;
+        let percentHolding = 0;
+
+        // Find last non-empty numerical cell (ignoring our new cells)
+        const cells = Array.from(row.querySelectorAll('td'));
+        // Filter out our new cells just in case they were added before selection? 
+        // We just added them, so they are at the end. 
+        // Iterate backwards starting from length-3 (last original cell)
+        for (let i = cells.length - 3; i >= 0; i--) {
+            const txt = cells[i].innerText.trim();
+            if (txt && !isNaN(parseFloat(txt))) {
+                percentHolding = parseFloat(txt);
+                break;
+            }
+        }
+
+        if (percentHolding > 0) {
+            holdings.push({
+                row: row,
+                url: url,
+                percent: percentHolding,
+                marketCap: 0,
+                value: 0
+            });
+        }
+    });
+
+    // 3. Status UI
+    let statusEl = document.createElement('div');
+    statusEl.innerHTML = `<small>Analyzing Portfolio: 0/${holdings.length} companies...</small>`;
+    statusEl.style.marginBottom = '10px';
+    statusEl.style.color = 'var(--ink-600)';
+    table.parentElement.insertBefore(statusEl, table);
+
+    // 4. Fetch Data (Concurrent with rate limit handling)
+    let completed = 0;
+    let totalPortfolioValue = 0;
+
+    // Process in chunks of 5 to avoid hammering
+    const chunkSize = 5;
+    for (let i = 0; i < holdings.length; i += chunkSize) {
+        const chunk = holdings.slice(i, i + chunkSize);
+
+        await Promise.all(chunk.map(async (item) => {
+            try {
+                const mcap = await fetchMarketCap(item.url);
+                item.marketCap = mcap;
+                item.value = mcap * (item.percent / 100);
+                totalPortfolioValue += item.value;
+
+                // Update Row Immediately
+                const valCell = item.row.querySelector('.portfolio-val');
+                if (valCell) valCell.innerText = formatCurrency(item.value);
+
+            } catch (e) {
+                console.error(`Failed to fetch for ${item.url}`, e);
+                const valCell = item.row.querySelector('.portfolio-val');
+                if (valCell) valCell.innerText = 'Err';
+            } finally {
+                completed++;
+                statusEl.innerHTML = `<small>Analyzing Portfolio: ${completed}/${holdings.length} companies...</small>`;
+            }
+        }));
+
+        // Small delay between chunks
+        if (i + chunkSize < holdings.length) {
+            await new Promise(r => setTimeout(r, 500));
+        }
+    }
+
+    // 5. Final Calculation (% Portfolio)
+    holdings.forEach(item => {
+        if (totalPortfolioValue > 0) {
+            const portPct = (item.value / totalPortfolioValue) * 100;
+            const pctCell = item.row.querySelector('.portfolio-pct');
+            if (pctCell) pctCell.innerText = portPct.toFixed(2) + '%';
+        }
+    });
+
+    statusEl.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <strong>Total Portfolio Value: ${formatCurrency(totalPortfolioValue)} Cr</strong>
+            <small style="color:var(--ink-500)">Calculated from ${holdings.length} holdings</small>
+        </div>
+    `;
+}
+
+async function fetchMarketCap(url) {
+    try {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('Network response was not ok');
+        const text = await response.text();
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(text, 'text/html');
+
+        // Robust selector for Market Cap
+        // Usually in topmost list: <li class="flex flex-space-between"> <span class="name">Market Cap</span> <span class="number">12,345</span> ...
+        const items = doc.querySelectorAll('li.flex');
+        for (let item of items) {
+            const name = item.querySelector('.name')?.innerText;
+            if (name && name.includes('Market Cap')) {
+                const num = item.querySelector('.number')?.innerText;
+                if (num) return parseFloat(num.replace(/,/g, ''));
+            }
+        }
+
+        // Fallback for older layouts or different screens
+        const spans = doc.querySelectorAll('.company-ratios span');
+        for (let i = 0; i < spans.length; i++) {
+            if (spans[i].innerText.includes('Market Cap')) {
+                // Next span usually has the number, or the one after
+                // This is less reliable, but a fallback.
+                // Better fallback: search for text in top-ratios
+            }
+        }
+
+        return 0;
+    } catch (e) {
+        console.warn("Market Cap Fetch Error", e);
+        return 0;
+    }
+}
+
+function formatCurrency(val) {
+    return val.toLocaleString('en-IN', {
+        maximumFractionDigits: 2,
+        minimumFractionDigits: 2
+    });
+}
+
+// -----------------------------------------------------
 // Core Logic
 // -----------------------------------------------------
 
 async function init() {
     try {
+        // Check for People Page Strategy first
+        if (PeopleStrategy.matches(document)) {
+            console.log("Screener Filter: People Strategy Active");
+            PeopleStrategy.init();
+            return; // Exit, don't do industry filtering on people pages
+        }
+
         const data = await chrome.storage.local.get(['stockMap']);
         if (!data.stockMap) {
             console.log("Screener Filter: No industry data found.");
+            // Even if no industry data, we might want to allow other features if added later
+            // But for now, just return
             return;
         }
         stockMap = data.stockMap;
@@ -169,6 +412,11 @@ async function init() {
 }
 
 function injectSidebarUI() {
+    // Skip injection for people pages
+    if (PeopleStrategy.matches(document)) {
+        return;
+    }
+
     // Primary Target: #change-list-filters (Shared by Upcoming and Latest Results)
     let parent = document.querySelector('#change-list-filters .content');
 
@@ -195,10 +443,29 @@ function injectSidebarUI() {
     details.open = true;
 
     const summary = document.createElement('summary');
-    summary.innerText = "By Industry";
     summary.style.fontWeight = "600";
     summary.style.cursor = "pointer";
     summary.style.marginBottom = "8px";
+
+    const summaryText = document.createElement('span');
+    summaryText.innerText = "By Industry";
+    summary.appendChild(summaryText);
+
+    // Warning Icon with Tooltip
+    const warningContainer = document.createElement('span');
+    warningContainer.className = 'screener-warning-container';
+
+    const warningIcon = document.createElement('span');
+    warningIcon.className = 'screener-warning-icon';
+    warningIcon.innerText = '!';
+
+    const tooltip = document.createElement('span');
+    tooltip.className = 'screener-tooltip';
+    tooltip.innerText = "Applying other filters after this filter would clear this filter. So, apply all the other filters you want before applying this.";
+
+    warningContainer.appendChild(warningIcon);
+    warningIcon.appendChild(tooltip); // Nesting allows pure CSS hover
+    summary.appendChild(warningContainer);
 
     const contentContainer = document.createElement('div');
     contentContainer.style.padding = "4px 0";
@@ -268,7 +535,7 @@ function showAllRows() {
     isFetchingAll = false;
 }
 
-function updateFilterStatus(currentMatches) {
+function updateFilterStatus(currentMatches, isComplete = false) {
     let statusEl = document.querySelector('.screener-scanner-status');
     const injectionPoint = activeStrategy.getStatusInjectionPoint();
 
@@ -279,28 +546,132 @@ function updateFilterStatus(currentMatches) {
     if (!statusEl) {
         statusEl = document.createElement('div');
         statusEl.className = 'screener-scanner-status';
-        statusEl.style.marginTop = '16px';
-        statusEl.style.padding = '12px';
-        statusEl.style.background = '#fcf8e3';
-        statusEl.style.borderRadius = '4px';
-        statusEl.style.border = '1px solid #faebcc';
-        statusEl.style.color = '#8a6d3b';
 
-        // Inject INTO the container, at the bottom
-        // This handles both TableStrategy (inside .card) and ListStrategy (after list items)
+        // Inject at the TOP of the results
         if (injectionPoint) {
-            injectionPoint.appendChild(statusEl);
+            // List Strategy (Latest Results)
+            if (activeStrategy.name === 'ListStrategy') {
+                const list = document.querySelector('.mark-visited');
+                if (list) injectionPoint.insertBefore(statusEl, list);
+                else injectionPoint.insertBefore(statusEl, injectionPoint.firstChild);
+            }
+            // Table Strategy (Screens)
+            else {
+                // For custom screens, we want it before the table wrapper
+                const table = document.querySelector('.responsive-holder') || document.querySelector('table.data-table');
+                if (table && injectionPoint.contains(table)) {
+                    injectionPoint.insertBefore(statusEl, table);
+                } else {
+                    injectionPoint.insertBefore(statusEl, injectionPoint.firstChild);
+                }
+            }
         }
     }
 
-    const nextUrl = getNextPageUrl(document);
-    let html = `<div>Showing <strong>${currentMatches}</strong> matches on this page.</div>`;
+    // --- Calculate Stats ---
+    const metrics = {
+        'Sales': [],
+        'EBIDT': [],
+        'Net Profit': [],
+        'EPS': []
+    };
 
-    if (nextUrl) {
-        html += `<div style="margin-top:5px; color:#666; font-size:12px;">More matches may exist on subsequent pages.</div>`;
-        html += `<button class="button-primary load-all-btn" style="margin-top:8px; padding: 6px 12px; cursor: pointer;">Scan All Pages</button>`;
-    } else {
-        html += `<div style="margin-top:5px; color:#27ae60; font-weight:500;">✓ End of Results.</div>`;
+    if (activeStrategy.getMetrics) {
+        const items = activeStrategy.getItems(document);
+        items.forEach(item => {
+            // Check visibility using style.display
+            if (item.style.display === 'none') return;
+
+            const m = activeStrategy.getMetrics(item);
+            if (m['Sales'] !== null) metrics['Sales'].push(m['Sales']);
+            if (m['EBIDT'] !== null) metrics['EBIDT'].push(m['EBIDT']);
+            if (m['Net Profit'] !== null) metrics['Net Profit'].push(m['Net Profit']);
+            if (m['EPS'] !== null) metrics['EPS'].push(m['EPS']);
+        });
+    }
+
+    const calcStats = (arr) => {
+        if (arr.length === 0) return { median: '-', avg: '-', dev: '-' };
+        arr.sort((a, b) => a - b);
+
+        const sum = arr.reduce((a, b) => a + b, 0);
+        const avg = sum / arr.length;
+
+        let median;
+        const mid = Math.floor(arr.length / 2);
+        if (arr.length % 2 === 0) {
+            median = (arr[mid - 1] + arr[mid]) / 2;
+        } else {
+            median = arr[mid];
+        }
+
+        // Standard Deviation (Population)
+        const squareDiffs = arr.map(v => Math.pow(v - avg, 2));
+        const avgSquareDiff = squareDiffs.reduce((a, b) => a + b, 0) / arr.length;
+        const stdDev = Math.sqrt(avgSquareDiff);
+
+        return {
+            median: median.toFixed(1) + '%',
+            avg: avg.toFixed(1) + '%',
+            dev: '±' + stdDev.toFixed(1) + '%'
+        };
+    };
+
+    const stats = {
+        'Sales': calcStats(metrics['Sales']),
+        'EBIDT': calcStats(metrics['EBIDT']),
+        'Net Profit': calcStats(metrics['Net Profit']),
+        'EPS': calcStats(metrics['EPS'])
+    };
+
+    // --- Build HTML ---
+    const nextUrl = getNextPageUrl(document);
+    // If nextUrl exists and we haven't completed a scan, show button.
+    // If isComplete is true, show "All pages scanned".
+    const showButton = nextUrl && !isComplete;
+
+    let html = `
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <div style="font-weight:600; font-size:16px;">
+                Found ${currentMatches} matches
+            </div>
+            ${showButton ? `<button class="button-primary load-all-btn">Scan All Pages for Complete Stats</button>` : `<span style="color:var(--sif-secondary); font-size:13px;">✓ All pages scanned</span>`}
+        </div>
+    `;
+
+    if (activeStrategy.name === 'ListStrategy') {
+        html += `
+            <div class="screener-stats-grid">
+                <div></div> <!-- Empty top-left -->
+                <div class="screener-stats-header">Median</div>
+                <div class="screener-stats-header">Average</div>
+                <div class="screener-stats-header">Std Dev</div>
+
+                <div class="screener-stats-label">Sales</div>
+                <div class="screener-stats-value">${stats['Sales'].median}</div>
+                <div class="screener-stats-value">${stats['Sales'].avg}</div>
+                <div class="screener-stats-value" style="font-size:12px;">${stats['Sales'].dev}</div>
+
+                <div class="screener-stats-label">EBIDT</div>
+                <div class="screener-stats-value">${stats['EBIDT'].median}</div>
+                <div class="screener-stats-value">${stats['EBIDT'].avg}</div>
+                <div class="screener-stats-value" style="font-size:12px;">${stats['EBIDT'].dev}</div>
+
+                <div class="screener-stats-label">Net Profit</div>
+                <div class="screener-stats-value">${stats['Net Profit'].median}</div>
+                <div class="screener-stats-value">${stats['Net Profit'].avg}</div>
+                <div class="screener-stats-value" style="font-size:12px;">${stats['Net Profit'].dev}</div>
+
+                <div class="screener-stats-label">EPS</div>
+                <div class="screener-stats-value">${stats['EPS'].median}</div>
+                <div class="screener-stats-value">${stats['EPS'].avg}</div>
+                <div class="screener-stats-value" style="font-size:12px;">${stats['EPS'].dev}</div>
+            </div>
+        `;
+    }
+
+    if (showButton) {
+        html += `<div style="margin-top:12px; color:var(--sif-secondary); font-size:12px;">* Stats are currently based on visible rows only. Click 'Scan All Pages' to aggregate data from all result pages.</div>`;
     }
 
     statusEl.innerHTML = html;
@@ -325,11 +696,11 @@ async function startDeepFetch(statusEl) {
     let nextUrl = getNextPageUrl(document);
     let errorCount = 0;
 
-    statusEl.innerHTML = `<div>Fetching all pages... <br>Found: <strong>${totalMatches}</strong></div>`;
+    statusEl.innerHTML = `<div style="padding:4px 0;">Fetching all pages... <br>Found: <strong>${totalMatches}</strong></div>`;
 
     while (nextUrl && isFetchingAll && fetchId === currentFetchId) {
         await new Promise(r => setTimeout(r, DELAY_BETWEEN_PAGES));
-        statusEl.innerHTML = `<div>Scanning Page ${pagesScanned + 1}... <br>Found: <strong>${totalMatches}</strong></div>`;
+        statusEl.innerHTML = `<div style="padding:4px 0;">Scanning Page ${pagesScanned + 1}... <br>Found: <strong>${totalMatches}</strong></div>`;
 
         try {
             let response = await fetch(nextUrl);
@@ -375,7 +746,8 @@ async function startDeepFetch(statusEl) {
 
     if (fetchId === currentFetchId) {
         isFetchingAll = false;
-        statusEl.innerHTML = `<div><strong>Scan Complete!</strong> Checked ${pagesScanned} pages.<br>Total Matches: <strong>${totalMatches}</strong></div>`;
+        // Re-render the full status UI by passing true for isComplete
+        updateFilterStatus(totalMatches, true);
     }
 }
 
@@ -401,29 +773,18 @@ class Combobox {
         this.isOpen = false;
 
         this.element = document.createElement('div');
-        this.element.style.position = 'relative';
-        this.element.style.display = 'flex';
-        this.element.style.alignItems = 'center';
+        this.element.className = 'screener-combobox-container';
 
         this.input = document.createElement('input');
         this.input.type = 'text';
+        this.input.className = 'screener-combobox-input';
         this.input.placeholder = 'Select Industry...';
-        this.input.style.width = '100%';
-        this.input.style.padding = '8px';
-        this.input.style.paddingRight = '30px';
-        this.input.style.border = '1px solid #d1d5db';
-        this.input.style.borderRadius = '4px';
         this.input.addEventListener('keydown', (e) => e.stopPropagation());
 
         // Clear Button (X)
         this.clearBtn = document.createElement('span');
+        this.clearBtn.className = 'screener-combobox-clear';
         this.clearBtn.innerHTML = '&times;';
-        this.clearBtn.style.position = 'absolute';
-        this.clearBtn.style.right = '10px';
-        this.clearBtn.style.cursor = 'pointer';
-        this.clearBtn.style.color = '#999';
-        this.clearBtn.style.fontSize = '18px';
-        this.clearBtn.style.display = 'none';
         this.clearBtn.title = "Clear Filter";
 
         this.clearBtn.addEventListener('click', (e) => {
@@ -432,21 +793,7 @@ class Combobox {
         });
 
         this.list = document.createElement('ul');
-        this.list.style.display = 'none';
-        this.list.style.position = 'absolute';
-        this.list.style.top = '100%';
-        this.list.style.left = '0';
-        this.list.style.zIndex = '1000';
-        this.list.style.background = 'white';
-        this.list.style.border = '1px solid #d1d5db';
-        this.list.style.borderRadius = '4px';
-        this.list.style.width = '100%';
-        this.list.style.maxHeight = '200px';
-        this.list.style.overflowY = 'auto';
-        this.list.style.listStyle = 'none';
-        this.list.style.padding = '0';
-        this.list.style.margin = '4px 0 0 0';
-        this.list.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1)';
+        this.list.className = 'screener-combobox-list';
 
         this.element.appendChild(this.input);
         this.element.appendChild(this.clearBtn);
@@ -484,27 +831,23 @@ class Combobox {
         this.list.innerHTML = '';
         if (matches.length === 0) {
             const li = document.createElement('li');
+            li.className = 'screener-combobox-item no-matches';
             li.innerText = 'No matches';
-            li.style.padding = '8px';
-            li.style.color = '#9ca3af';
             this.list.appendChild(li);
         } else {
             matches.forEach(item => {
                 const li = document.createElement('li');
+                li.className = 'screener-combobox-item';
                 li.innerText = item;
-                li.style.padding = '8px';
-                li.style.cursor = 'pointer';
-                li.style.borderBottom = '1px solid #f3f4f6';
-                li.addEventListener('mouseenter', () => li.style.background = '#f9fafb');
-                li.addEventListener('mouseleave', () => li.style.background = 'white');
+                // Removed inline hover/selection styles -> moved to CSS
                 li.addEventListener('mousedown', () => this.select(item));
                 this.list.appendChild(li);
             });
         }
     }
 
-    open() { this.list.style.display = 'block'; this.isOpen = true; }
-    close() { this.list.style.display = 'none'; this.isOpen = false; }
+    open() { this.element.classList.add('open'); this.list.style.display = 'block'; this.isOpen = true; }
+    close() { this.element.classList.remove('open'); this.list.style.display = 'none'; this.isOpen = false; }
 
     select(item) {
         this.input.value = item;

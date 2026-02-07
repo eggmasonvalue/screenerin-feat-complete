@@ -4,10 +4,39 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [4.0.0] - 2026-02-07
+### Major Changes
+- **Portfolio Analysis**: Full support for `screener.in/people/*` pages with portfolio value calculations.
+  - Adds "Value (Cr)" and "% Port" columns to the Shareholdings table.
+  - Calculates values based on real-time Market Cap fetching.
+
+### Added
+- **Dark Mode Support**: Adaptive UI that seamlessly integrates with Screener.in's native Light/Dark themes.
+- **Rate Limiting Improvements**: Enhanced backoff display in popup with accurate progress feedback.
+
+### Security
+- Obscured email in git commits for privacy.
+
 ## [3.0.0] - 2026-02-07
 ### Major Changes
 - **Concalls Support**: Extended the industry filter functionality to `concalls/` and `concalls/upcoming/` pages.
 - **Documentation**: Updated README with supported pages and superuser tips.
+
+### Added
+- **Aggregate Stats (v1.10.0)**:
+    - Added a statistics container to the *Latest Results* page showing Median, Average, and Standard Deviation for Sales, EBITDA, Net Profit, and EPS.
+    - Implemented `getMetrics` to parse localized numeric formats (e.g., "⇡ 14%") from the data table.
+    - Added a helper text to the Industry Filter widget explaining that other filters clear the selection.
+- **Portfolio Analysis**:
+    - Experimental feature to analyze portfolio value on *People* pages.
+
+### Changed
+- **UI Improvements**:
+    - Moved the stats container to the top of the results list for better visibility.
+    - Updated CSS to match Screener.in's native Light/Dark theme (removed yellow alert style).
+    - Replaced "Range" with "Standard Deviation" in stats.
+    - Removed redundant "Count" column from the stats grid.
+    - Improved alignment of the "Scan All Pages" button and validation text.
 
 ### Removed
 - **Screens Support**: Removed support for `screens/*` pages as it was not a scheduled feature.
