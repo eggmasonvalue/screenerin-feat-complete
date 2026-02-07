@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.1] - 2026-02-07
+### Removed
+- **Screens Support**: Removed support for `screens/*` pages as it was not a scheduled feature.
+
+### Added
+- **License**: Added MIT LICENSE file.
+
+### Documentation
+- Updated `README.md` to accurately reflect v2.0.0 features (Deep Scanning, Native Sidebar, Specialized Strategies).
+
 ## [2.0.0] - 2026-02-07
 
 ### Major Changes
