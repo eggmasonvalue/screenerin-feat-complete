@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Screener.in Industry Filter",
-  "version": "4.1.1",
+  "version": "4.2.0",
   "description": "Adds industry filtering to Screener.in results.",
   "permissions": [
     "storage"
@@ -10,20 +10,20 @@
     "https://www.screener.in/*"
   ],
   "action": {
-    "default_popup": "popup.html",
+    "default_popup": "src/popup/popup.html",
     "default_icon": {
-      "16": "icons/icon16.png",
-      "48": "icons/icon48.png",
-      "128": "icons/icon128.png"
+      "16": "assets/icons/icon16.png",
+      "48": "assets/icons/icon48.png",
+      "128": "assets/icons/icon128.png"
     }
   },
   "icons": {
-    "16": "icons/icon16.png",
-    "48": "icons/icon48.png",
-    "128": "icons/icon128.png"
+    "16": "assets/icons/icon16.png",
+    "48": "assets/icons/icon48.png",
+    "128": "assets/icons/icon128.png"
   },
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "src/background/background.js"
   },
   "content_scripts": [
     {
@@ -35,10 +35,10 @@
         "https://www.screener.in/people/*"
       ],
       "js": [
-        "content.js"
+        "src/content/content.js"
       ],
       "css": [
-        "styles.css"
+        "src/content/styles.css"
       ]
     }
   ]

@@ -189,7 +189,7 @@ const PeopleStrategy = {
     name: 'PeopleStrategy',
     matches: (doc) => {
         return window.location.pathname.includes('/people/') &&
-            !!findShareholdingTable(doc);
+            !!doc.querySelector('#shareholdings table.data-table');
     },
     // No "items" in the filtering sense, but we need to init the analysis
     init: () => {
@@ -198,14 +198,8 @@ const PeopleStrategy = {
 };
 
 function findShareholdingTable(doc = document) {
-    const tables = Array.from(doc.querySelectorAll('.responsive-holder table.data-table'));
-    return tables.find(t => {
-        const headers = Array.from(t.querySelectorAll('th')).map(th => th.innerText.trim());
-        // Shareholding table has sequence of dates like "Jun 2024", "Mar 2022" etc.
-        const datePattern = /^[A-Z][a-z]{2}\s+\d{2,4}$/i;
-        const dateCount = headers.filter(h => datePattern.test(h)).length;
-        return dateCount >= 3; // Robust enough to distinguish from other tables
-    });
+    // Robust ID-based selector works on both Desktop and Mobile
+    return doc.querySelector('#shareholdings table.data-table');
 }
 
 // ... existing code ...

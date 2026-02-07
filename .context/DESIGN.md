@@ -5,7 +5,7 @@
 | Feature | Status | Implementation Details |
 | :--- | :--- | :--- |
 | **Manifest V3 Setup** | ✅ Done | `manifest.json` configured with storage permissions. |
-| **Industry Scraping** | ✅ Done | `background.js` scrapes `/market/` with rate limiting. |
+| **Industry Scraping** | ✅ Done | `src/background/background.js` scrapes `/market/` with rate limiting. |
 | **Local Storage** | ✅ Done | Data stored as `stockMap` (Symbol -> Industry). |
 | **Popup UI** | ✅ Done | Simple interface to trigger scrape and view progress. |
 | **Filter Injection** | ✅ Done | Injects into `.change-list-filter` (Sidebar) on `/upcoming-results/`, `/results/latest/`, and `/concalls/`. |

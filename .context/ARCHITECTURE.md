@@ -2,7 +2,7 @@
 
 ## Modules
 
-### 1. Background Service (`background.js`)
+### 1. Background Service (`src/background/background.js`)
 - **Role**: Data Aggregator.
 - **Responsibility**: 
   - Handles the "Warm-up" process (scraping `/market/` and sub-pages).
@@ -10,7 +10,7 @@
   - Stores the resulting `Map<Symbol, Industry>` in `chrome.storage.local`.
   - **Global Backoff Manager**: Maintains a persistent rate-limiting backoff level and duration across all background and content script requests.
 
-### 2. Content Script (`content.js`)
+### 2. Content Script (`src/content/content.js`)
 - **Role**: UI Injector & Interactor.
 - **Responsibility**:
   - Runs on `screener.in/upcoming-results/*` and `screener.in/results/latest/*`.
@@ -23,10 +23,10 @@
   - **Portfolio Analysis** (`PeopleStrategy`):
     - Target: `screener.in/people/*`
     - Logic: Detects Shareholdings table -> Injects Columns -> Fetches Market Cap (via Background) -> Calculates Value from latest holding.
-- **Adaptive UI**: Detects systems and Screener.in theme changes to shift between Light/Dark modes.
 - **Mobile Resilience**: Uses `MutationObserver` to watch for header/sidebar transformations (common when Screener.in switches to modal-based filters on mobile) and re-executes injection logic.
+- **Styling (`src/content/styles.css`)**: Adaptive CSS for light/dark modes and custom UI components.
 
-### 3. Popup (`popup.html` / `popup.js`)
+### 3. Popup (`src/popup/popup.html` / `src/popup/popup.js`)
 - **Role**: Control Panel.
 - **Responsibility**:
   - Allows user to manually trigger/refresh the industry database.

@@ -4,32 +4,27 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-## [4.1.1] - 2026-02-07
-### Documentation
-- Updated `README.md` to use consistent `% PF` (Portfolio) terminology instead of `% Pt`.
+## [4.2.0] - 2026-02-07
+### Major Features
+- **Superinvestor Portfolio Analysis**:
+  - Full support for `screener.in/people/*` pages.
+  - Adds **"₹ Cr"** and **"% PF"** (Portfolio) columns to the historical Shareholdings table.
+  - Dynamic Market Cap fetching via background script with global exponential backoff to handle rate limits.
+  - Strict calculation logic using only the latest reported quarter data.
+- **Concalls support**: Extended industry filtering to `concalls/` and `concalls/upcoming/` pages.
+- **Aggregate Statistics**: Enhanced statistics grid for Latest Results showing Median, Average, and Standard Deviation for key financial metrics.
 
-## [4.1.0] - 2026-02-07
-### Fixed
-- **Mobile Filter**: Fixed issue where the industry filter would not function on mobile views due to Screener.in moving the sidebar content into a modal. Implemented `MutationObserver` to re-initialize the filter logic when it detects this layout change.
-- **Portfolio Logic**: Refined `getPercentHolding` to strictly use the last column (latest quarter) of data.
-- **UI Cleanup**: Removed the "Analyzing Portfolio" status bar and summary footer to act more like a native feature.
-- **Documentation**: Comprehensive update to `README.md` to reflect v4.0.0 features and streamlined the feature presentation.
-
-
-## [4.0.0] - 2026-02-07
-### Major Changes
-- **Portfolio Analysis**: Full support for `screener.in/people/*` pages with robust portfolio value calculations.
-  - Adds **"₹ Cr"** and **"% PF"** columns to the historical Shareholdings table initially populated with "..." placeholder.
-  - **Refined Calculation**: Logic now strictly uses the **last reported quarter** (latest column) for holding percentages. If a stock was exited in the last quarter (empty cell), it correctly computes as 0 value.
-  - **Robustness**: Implemented smart table detection using date-pattern matching headers (e.g., "Jun 2025") to avoid mis-targeting summary tables like "Bulk Deals".
-  - **Performance**: Shifted fetching logic to `background.js` to utilize a global exponential backoff strategy, preventing rate-limit issues on large portfolios.
-
-### Added
+### Changed
+- **Project Structure**: Reorganized codebase into `src/` and `assets/` directories for better maintainability.
+- **Mobile Resilience**: Implemented `MutationObserver` to ensure filters function correctly when Screener.in transitions to modal-based layouts on mobile views.
 - **Dark Mode Support**: Adaptive UI that seamlessly integrates with Screener.in's native Light/Dark themes.
-- **Rate Limiting Improvements**: Enhanced backoff display in popup with accurate progress feedback.
+- **Deep Scanning**: Robust "Scan All Pages" functionality for both Table and List views.
+- **Rate Limiting**: Enhanced global backoff manager with persistent status feedback in the popup UI.
 
-### Security
-- Obscured email in git commits for privacy.
+### Fixed
+- **Robust Table Detection**: Improved selection logic for Superinvestor pages to avoid mis-targeting summary tables.
+- **UI Cleanups**: Removed redundant "Count" columns and "Analyzing" status bars for a more native feel.
+- **Security**: Obscured developer email in git configuration.
 
 ## [3.0.0] - 2026-02-07
 ### Major Changes
