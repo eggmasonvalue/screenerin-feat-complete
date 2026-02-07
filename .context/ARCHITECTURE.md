@@ -14,9 +14,11 @@
 - **Responsibility**:
   - Runs on `screener.in/upcoming-results/*` and `screener.in/results/latest/*`.
   - Injects **Custom Combobox** (Searchable Dropdown) into Sidebar.
-  - **Multi-table Support**: Iterates over all `table.data-table` instances (e.g., on `/results/latest/`).
-  - **Deep Scanning**: Automatically fetches subsequent pages if single table. **Disabled** on multi-table pages to prevent data corruption.
-  - Hides native pagination when filtering active.
+  - **Specialized Strategies**:
+    - `TableStrategy`: Handles standard `table.data-table` layouts (e.g. Upcoming Results). Injects status widget *inside* container cards to preserve layout.
+    - `ListStrategy`: Handles `.mark-visited .flex-row` layouts (e.g. Latest Results). Manages paired Header+Data DOM nodes.
+  - **Deep Scanning**: Robustly fetches subsequent pages for both Table and List views, ensuring financial data tables are correctly adopted and appended.
+  - **Cleanup**: Implements `cleanupItems` to remove deep-fetched rows when filters change.
 
 ### 3. Popup (`popup.html` / `popup.js`)
 - **Role**: Control Panel.

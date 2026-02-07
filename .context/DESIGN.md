@@ -10,7 +10,8 @@
 | **Popup UI** | ✅ Done | Simple interface to trigger scrape and view progress. |
 | **Filter Injection** | ✅ Done | Injects into `.change-list-filter` (Sidebar) on `/upcoming-results/` and `/results/latest/`. |
 | **Client-side Filtering** | ✅ Done | Toggles `display`. |
-| **Pagination Support** | ✅ Done | "Deep Scan": Fetches next pages (disabled on multi-table pages like Latest Results). |
+| **Pagination Support** | ✅ Done | "Deep Scan": Robustly fetches next pages for both Table and List views; handles complex DOM adoption. |
+| **Specialized DOM Handling** | ✅ Done | Distinct strategies (`TableStrategy`, `ListStrategy`) for different page layouts. |
 | **Extension Icon** | ✅ Done | Custom SVG (Bars + Funnel). |
 | **Context Menu** | ❌ Not Planned | Context menu actions not required for v1. |
 

@@ -1,33 +1,21 @@
 # Changelog
 
-## [Unreleased]
+All notable changes to this project will be documented in this file.
 
 ## [2.0.0] - 2026-02-07
-### Added
-- **Feature Expansion**: Added industry filtering support to the "Latest Results" page (`/results/latest/`).
-- **Deep Scanning**: "Safe Fetch" button to scan all result pages sequentially.
-- **Searchable Combobox**: Custom fuzzy-search dropdown for industry selection.
-- **Visual Identity**: Custom PNG extension icons (16, 48, 128px) based on Screener.in branding.
 
-### Changed
-- **Rate Limiting Engine**:
-  - Implemented exponential backoff starting at **5s**, doubling (10s, 20s) on persistent blocks.
-  - Added **Global Memory** to prevent backoff resets during multi-page scans.
-  - **Slow Decay**: Level recovers slowly (0.05 per success) to maintain protection during high-traffic bursts.
-- **UI Architecture**:
-  - Refactored Popup to **Full Bleed** layout with native Screener.in design tokens.
-  - Added real-time progress bars and status feedback for background scraping.
-- **Robustness**:
-  - Multi-table support for grouped results.
-  - Fetch controllers to prevent race conditions.
-  - Comprehensive JSDoc documentation.
+### Major Changes
+- **Specialized DOM Strategies**: Completely replaced the experimental "Universal Strategy" with robust, page-specific strategies:
+  - `TableStrategy`: Handles standard data tables (e.g., Upcoming Results).
+  - `ListStrategy`: Handles complex list/data-pair layouts (e.g., Latest Results).
+- **Deep Scanning**: Implemented "Scan All Pages" functionality that successfully adopts both company headers and financial data tables across pages.
+- **Layout Stabilization**: Fixed flexbox layout corruptions on Upcoming Results by targeting specific card containers for UI injection.
+
+### Added
+- **Native Sidebar Widget**: A "Filter by Industry" dropdown that integrates seamlessly with Screener's sidebar.
+- **Cleanup Logic**: Robust removal of deep-fetched rows when toggling filters.
 
 ### Fixed
-- **Rate Limit Oscillation**: Fixed "stuck at 4.2s" bug by implementing slow decay.
-- **UI Stability**: Resolved race conditions in sidebar dropdown selection and pagination visibility.
+- **Rendering Bugs**: Solved issues where financial data tables were missing from scanned results.
+- **UI Distortion**: Fixed status bar appearing as a side column on flex-layout pages.
 
-## [1.0.0] - 2026-02-06
-### Initial Release
-- **Background Scraper**: Scrapes `/market/` for industry mapping.
-- **Popup**: Database initialization and stats.
-- **Sidebar**: Basic industry filtering injection.
