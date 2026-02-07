@@ -5,13 +5,15 @@ A powerful Chrome Extension that adds **Industry-wise Filtering** capabilities t
 ## 🚀 Features
 
 ### 1. Industry Filter Widget
-- **Native Integration**: Adds a "Filter by Industry" dropdown seamlessly into the Screener sidebar.
+- **Native Integration**: Adds a "By Industry" dropdown seamlessly into the Screener sidebar.
 - **Searchable Dropdown**: Easily find industries with a type-to-search interface.
 
 ### 2. Broad Compatibility
 Works on multiple Screener.in pages:
-- **[Upcoming Results](https://www.screener.in/upcoming-results/)**: Filters the results table.
-- **[Latest Results](https://www.screener.in/results/latest/)**: Filters the list and supports deep scanning.
+- **[Upcoming Results](https://www.screener.in/upcoming-results/)**
+- **[Latest Results](https://www.screener.in/results/latest/)**
+- **[Concalls](https://www.screener.in/concalls/)**
+- **[Upcoming Concalls](https://www.screener.in/concalls/upcoming/)** Note: this doesn't work. It's a placeholder for when screener.in adds filtering support for upcoming concalls.
 
 ## 🛠️ Installation
 
@@ -30,10 +32,13 @@ Works on multiple Screener.in pages:
 
 2.  **Filter Results**:
     - Go to any supported page (e.g., [Upcoming Results](https://www.screener.in/upcoming-results/)).
-    - Look for the **"Filter by Industry"** widget in the sidebar.
+    - Look for the **"By Industry"** widget in the sidebar.
     - Select an industry to hide irrelevant rows.
 
-## 🏗️ Architecture (v2.0.0)
+3. **Superuser tips**:
+    - Combine this with a .pdf batch downloader chrome extension to download all the earnings call transcripts with a single click for uploading to RAG based LLM setups.
+
+## 🏗️ Architecture
 
 - **Manifest V3**: Secure and performant.
 - **Specialized Strategies**:

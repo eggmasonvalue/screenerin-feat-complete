@@ -195,7 +195,7 @@ function injectSidebarUI() {
     details.open = true;
 
     const summary = document.createElement('summary');
-    summary.innerText = "Filter by Industry";
+    summary.innerText = "By Industry";
     summary.style.fontWeight = "600";
     summary.style.cursor = "pointer";
     summary.style.marginBottom = "8px";

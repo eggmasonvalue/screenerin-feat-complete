@@ -8,7 +8,7 @@
 | **Industry Scraping** | ✅ Done | `background.js` scrapes `/market/` with rate limiting. |
 | **Local Storage** | ✅ Done | Data stored as `stockMap` (Symbol -> Industry). |
 | **Popup UI** | ✅ Done | Simple interface to trigger scrape and view progress. |
-| **Filter Injection** | ✅ Done | Injects into `.change-list-filter` (Sidebar) on `/upcoming-results/` and `/results/latest/`. |
+| **Filter Injection** | ✅ Done | Injects into `.change-list-filter` (Sidebar) on `/upcoming-results/`, `/results/latest/`, and `/concalls/`. |
 | **Client-side Filtering** | ✅ Done | Toggles `display`. |
 | **Pagination Support** | ✅ Done | "Deep Scan": Robustly fetches next pages for both Table and List views; handles complex DOM adoption. |
 | **Specialized DOM Handling** | ✅ Done | Distinct strategies (`TableStrategy`, `ListStrategy`) for different page layouts. |

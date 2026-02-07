@@ -2,10 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
-## [2.0.1] - 2026-02-07
+## [Unreleased]
+
+## [3.0.0] - 2026-02-07
+### Major Changes
+- **Concalls Support**: Extended the industry filter functionality to `concalls/` and `concalls/upcoming/` pages.
+- **Documentation**: Updated README with supported pages and superuser tips.
+
 ### Removed
 - **Screens Support**: Removed support for `screens/*` pages as it was not a scheduled feature.
 
+## [2.0.1] - 2026-02-07
 ### Added
 - **License**: Added MIT LICENSE file.
 
@@ -22,7 +29,7 @@ All notable changes to this project will be documented in this file.
 - **Layout Stabilization**: Fixed flexbox layout corruptions on Upcoming Results by targeting specific card containers for UI injection.
 
 ### Added
-- **Native Sidebar Widget**: A "Filter by Industry" dropdown that integrates seamlessly with Screener's sidebar.
+- **Native Sidebar Widget**: A "By Industry" dropdown that integrates seamlessly with Screener's sidebar.
 - **Cleanup Logic**: Robust removal of deep-fetched rows when toggling filters.
 
 ### Fixed
