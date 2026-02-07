@@ -8,6 +8,7 @@
   - Handles the "Warm-up" process (scraping `/market/` and sub-pages).
   - Manages rate-limited fetching queue.
   - Stores the resulting `Map<Symbol, Industry>` in `chrome.storage.local`.
+  - **Global Backoff Manager**: Maintains a persistent rate-limiting backoff level and duration across all background and content script requests.
 
 ### 2. Content Script (`content.js`)
 - **Role**: UI Injector & Interactor.
@@ -19,6 +20,11 @@
     - `ListStrategy`: Handles `.mark-visited .flex-row` layouts (e.g. Latest Results). Manages paired Header+Data DOM nodes.
   - **Deep Scanning**: Robustly fetches subsequent pages for both Table and List views, ensuring financial data tables are correctly adopted and appended.
   - **Cleanup**: Implements `cleanupItems` to remove deep-fetched rows when filters change.
+  - **Portfolio Analysis** (`PeopleStrategy`):
+    - Target: `screener.in/people/*`
+    - Logic: Detects Shareholdings table -> Injects Columns -> Fetches Market Cap (via Background) -> Calculates Value from latest holding.
+- **Adaptive UI**: Detects systems and Screener.in theme changes to shift between Light/Dark modes.
+- **Mobile Resilience**: Uses `MutationObserver` to watch for header/sidebar transformations (common when Screener.in switches to modal-based filters on mobile) and re-executes injection logic.
 
 ### 3. Popup (`popup.html` / `popup.js`)
 - **Role**: Control Panel.
@@ -52,4 +58,10 @@ sequenceDiagram
     Content->>Content: Inject Filter Dropdown
     User->>Content: Selects "Textiles"
     Content->>Content: Hides non-Textile rows
+
+    User->>Content: Navigates to /people/
+    Content->>Background: Message: "fetchMarketCap" (per holding)
+    Background->>Screener: GET /company/url
+    Background->>Content: Returns Market Cap
+    Content->>Content: Updates "Value" & "% Pt" cells
 ```

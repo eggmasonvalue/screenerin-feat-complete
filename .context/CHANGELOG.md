@@ -4,11 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [4.1.0] - 2026-02-07
+### Fixed
+- **Mobile Filter**: Fixed issue where the industry filter would not function on mobile views due to Screener.in moving the sidebar content into a modal. Implemented `MutationObserver` to re-initialize the filter logic when it detects this layout change.
+- **Portfolio Logic**: Refined `getPercentHolding` to strictly use the last column (latest quarter) of data.
+- **UI Cleanup**: Removed the "Analyzing Portfolio" status bar and summary footer to act more like a native feature.
+- **Documentation**: Comprehensive update to `README.md` to reflect v4.0.0 features and streamlined the feature presentation.
+
+
 ## [4.0.0] - 2026-02-07
 ### Major Changes
-- **Portfolio Analysis**: Full support for `screener.in/people/*` pages with portfolio value calculations.
-  - Adds "Value (Cr)" and "% Port" columns to the Shareholdings table.
-  - Calculates values based on real-time Market Cap fetching.
+- **Portfolio Analysis**: Full support for `screener.in/people/*` pages with robust portfolio value calculations.
+  - Adds **"₹ Cr"** and **"% Pt"** columns to the historical Shareholdings table initially populated with "..." placeholder.
+  - **Refined Calculation**: Logic now strictly uses the **last reported quarter** (latest column) for holding percentages. If a stock was exited in the last quarter (empty cell), it correctly computes as 0 value.
+  - **Robustness**: Implemented smart table detection using date-pattern matching headers (e.g., "Jun 2025") to avoid mis-targeting summary tables like "Bulk Deals".
+  - **Performance**: Shifted fetching logic to `background.js` to utilize a global exponential backoff strategy, preventing rate-limit issues on large portfolios.
 
 ### Added
 - **Dark Mode Support**: Adaptive UI that seamlessly integrates with Screener.in's native Light/Dark themes.
@@ -37,6 +47,7 @@ All notable changes to this project will be documented in this file.
     - Replaced "Range" with "Standard Deviation" in stats.
     - Removed redundant "Count" column from the stats grid.
     - Improved alignment of the "Scan All Pages" button and validation text.
+    - Added warning icon (using native `icon-info`) next to the "By Industry" header.
 
 ### Removed
 - **Screens Support**: Removed support for `screens/*` pages as it was not a scheduled feature.

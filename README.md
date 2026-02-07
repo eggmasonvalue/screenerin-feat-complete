@@ -1,26 +1,28 @@
 # Screener.in Industry Filter Extension
 
-A powerful Chrome Extension that adds **Industry-wise Filtering** capabilities to [Screener.in](https://www.screener.in/).
+A powerful Chrome Extension that adds high-impact features to India's most beloved [Screener.in](https://www.screener.in/).
 
 ## 🚀 Features
 
 ### 1. Industry Filter Widget
 - **Native Integration**: Adds a "By Industry" dropdown seamlessly into the Screener sidebar.
 - **Searchable Dropdown**: Easily find industries with a type-to-search interface.
+- **Broad Compatibility**: Works on multiple Screener.in pages:
+  - **[Upcoming Results](https://www.screener.in/upcoming-results/)**
+  - **[Latest Results](https://www.screener.in/results/latest/)**
+  - **[Concalls](https://www.screener.in/concalls/)**
+  - **[Upcoming Concalls](https://www.screener.in/concalls/upcoming/)** 
+    - **Note**: this doesn't work. It's a placeholder for when screener.in adds filtering support for upcoming concalls.
 
-### 2. Broad Compatibility
-Works on multiple Screener.in pages:
-- **[Upcoming Results](https://www.screener.in/upcoming-results/)**
-- **[Latest Results](https://www.screener.in/results/latest/)**
-- **[Concalls](https://www.screener.in/concalls/)**
-- **[Upcoming Concalls](https://www.screener.in/concalls/upcoming/)** Note: this doesn't work. It's a placeholder for when screener.in adds filtering support for upcoming concalls.
+### 2. Aggregate Statistics
+- **Latest Results Analytics**: Among the filtered entities, view Median, Average, and Standard Deviation for YoY growth in Sales, EBITDA, Net Profit, and EPS.
 
-### 3. Aggregate Statistics
-- **Latest Results Analytics**: Among the filtered entities, view Median, Average, and Standard Deviation for:
-  - Sales
-  - EBITDA
-  - Net Profit
-  - EPS
+### 3. Superinvestor portfolio analysis
+  - `screener.in/people/*/#shareholdings` pages now have **"₹ Cr"** (Value) and **"% Pt"** (Percentage of Portfolio) columns.
+
+### 4. Seamless UI/UX
+- **Dark Mode Support**: Adaptive UI that matches Screener.in's native Light and Dark themes.
+- **Native Experience**: Clean integration, in line with screener's beloved UI/UX.
 
 ## 🛠️ Installation
 
@@ -35,16 +37,18 @@ Works on multiple Screener.in pages:
 1.  **Initialize Database**:
     - Click the extension icon in the toolbar.
     - Click **"Initialize Industry Database"**.
-    - Wait for the progress bar. This is a one-time setup (suggest to be refreshed once a quarter).
+    - **Backoff Feedback**: If Screener.in applies rate limits, the popup provides real-time feedback on the backoff duration.
+    - Note: This is a one-time setup (suggested to be refreshed once a quarter).
 
 2.  **Filter Results**:
     - Go to any supported page (e.g., [Upcoming Results](https://www.screener.in/upcoming-results/)).
-    - Look for the **"By Industry"** widget in the sidebar.
-    - Select an industry to hide irrelevant rows.
+    - Use the **"Scan All Pages"** button to aggregate results across multiple pages.
+    - Select an industry from the **"By Industry"** widget to filter.
 
-3. **Superuser tips**:
-    - Combine this with a .pdf batch downloader chrome extension to download all the earnings call transcripts with a single click for uploading to RAG based LLM setups.
-    - For mobile, use browsers like Microsoft Edge or Quetta that lets you add custom extensions.
+3. **Works on mobile views too**:
+    - Use mobile browsers like Microsoft Edge Canary or [Quetta](https://www.quetta.net/) (not an endorsement) that support custom extensions.
+
+  Note: No setup required for superinvestor portfolio analysis.
 
 ## 🏗️ Architecture
 

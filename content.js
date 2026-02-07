@@ -17,17 +17,7 @@ const DELAY_BETWEEN_PAGES = 300;
 // Strategies
 // -----------------------------------------------------
 
-const PeopleStrategy = {
-    name: 'PeopleStrategy',
-    matches: (doc) => {
-        return window.location.pathname.includes('/people/') &&
-            !!doc.querySelector('.responsive-holder table.data-table');
-    },
-    // No "items" in the filtering sense, but we need to init the analysis
-    init: () => {
-        startPortfolioAnalysis();
-    }
-};
+// PeopleStrategy is defined below with startPortfolioAnalysis
 
 const TableStrategy = {
     name: 'TableStrategy',
@@ -195,22 +185,52 @@ let activeStrategy = null;
 // Analysis Logic (People Page)
 // -----------------------------------------------------
 
+const PeopleStrategy = {
+    name: 'PeopleStrategy',
+    matches: (doc) => {
+        return window.location.pathname.includes('/people/') &&
+            !!findShareholdingTable(doc);
+    },
+    // No "items" in the filtering sense, but we need to init the analysis
+    init: () => {
+        startPortfolioAnalysis();
+    }
+};
+
+function findShareholdingTable(doc = document) {
+    const tables = Array.from(doc.querySelectorAll('.responsive-holder table.data-table'));
+    return tables.find(t => {
+        const headers = Array.from(t.querySelectorAll('th')).map(th => th.innerText.trim());
+        // Shareholding table has sequence of dates like "Jun 2024", "Mar 2022" etc.
+        const datePattern = /^[A-Z][a-z]{2}\s+\d{2,4}$/i;
+        const dateCount = headers.filter(h => datePattern.test(h)).length;
+        return dateCount >= 3; // Robust enough to distinguish from other tables
+    });
+}
+
+// ... existing code ...
+
 async function startPortfolioAnalysis() {
-    const table = document.querySelector('.responsive-holder table.data-table');
-    if (!table) return;
+    const table = findShareholdingTable();
+    if (!table) {
+        console.warn("Portfolio Analysis: Shareholdings table not found.");
+        return;
+    }
 
     // 1. Inject Columns
     const theadRow = table.querySelector('thead tr');
     if (theadRow && !theadRow.querySelector('.portfolio-header')) {
-        const thPercent = document.createElement('th');
-        thPercent.className = 'portfolio-header';
-        thPercent.innerText = '% Port';
-        thPercent.style.textAlign = 'right';
-
         const thValue = document.createElement('th');
         thValue.className = 'portfolio-header';
-        thValue.innerText = 'Value (Cr)';
+        thValue.innerText = '₹ Cr';
         thValue.style.textAlign = 'right';
+        thValue.title = "Current Value in Crores";
+
+        const thPercent = document.createElement('th');
+        thPercent.className = 'portfolio-header';
+        thPercent.innerText = '% Pt'; // Even shorter
+        thPercent.style.textAlign = 'right';
+        thPercent.title = "Percentage of visible portfolio";
 
         theadRow.appendChild(thValue);
         theadRow.appendChild(thPercent);
@@ -221,7 +241,6 @@ async function startPortfolioAnalysis() {
 
     // 2. Parse Rows & Setup Placeholders
     rows.forEach(row => {
-        // Skip if already has cells
         if (row.querySelector('.portfolio-cell')) return;
 
         const tdValue = document.createElement('td');
@@ -237,23 +256,21 @@ async function startPortfolioAnalysis() {
         row.appendChild(tdValue);
         row.appendChild(tdPercent);
 
-        // Extract Data
         const link = row.querySelector('td.text a');
         if (!link) return;
 
         const url = link.href;
         let percentHolding = 0;
 
-        // Find last non-empty numerical cell (ignoring our new cells)
         const cells = Array.from(row.querySelectorAll('td'));
-        // Filter out our new cells just in case they were added before selection? 
-        // We just added them, so they are at the end. 
-        // Iterate backwards starting from length-3 (last original cell)
-        for (let i = cells.length - 3; i >= 0; i--) {
-            const txt = cells[i].innerText.trim();
+
+        // Strict Logic: Use ONLY the last period's value (last original column)
+        // We added 2 columns, so the last original is at index length - 3
+        if (cells.length >= 3) {
+            const lastOriginalCell = cells[cells.length - 3];
+            const txt = lastOriginalCell.innerText.trim();
             if (txt && !isNaN(parseFloat(txt))) {
                 percentHolding = parseFloat(txt);
-                break;
             }
         }
 
@@ -268,25 +285,29 @@ async function startPortfolioAnalysis() {
         }
     });
 
-    // 3. Status UI
-    let statusEl = document.createElement('div');
-    statusEl.innerHTML = `<small>Analyzing Portfolio: 0/${holdings.length} companies...</small>`;
-    statusEl.style.marginBottom = '10px';
-    statusEl.style.color = 'var(--ink-600)';
-    table.parentElement.insertBefore(statusEl, table);
+    // 4. Fetch Data (Via Background script to handle backoff globally)
+    // No status UI is shown as per user request
 
-    // 4. Fetch Data (Concurrent with rate limit handling)
+    // Status UI block removed
+
+    // 4. Fetch Data (Via Background script to handle backoff globally)
     let completed = 0;
     let totalPortfolioValue = 0;
 
-    // Process in chunks of 5 to avoid hammering
-    const chunkSize = 5;
+    const chunkSize = 3; // Conservative chunking
     for (let i = 0; i < holdings.length; i += chunkSize) {
         const chunk = holdings.slice(i, i + chunkSize);
 
         await Promise.all(chunk.map(async (item) => {
             try {
-                const mcap = await fetchMarketCap(item.url);
+                // Background handles retries and backoff
+                const mcap = await new Promise((resolve, reject) => {
+                    chrome.runtime.sendMessage({ action: "fetchMarketCap", url: item.url }, (res) => {
+                        if (res?.error) reject(new Error(res.error));
+                        else resolve(res?.mcap || 0);
+                    });
+                });
+
                 item.marketCap = mcap;
                 item.value = mcap * (item.percent / 100);
                 totalPortfolioValue += item.value;
@@ -296,18 +317,17 @@ async function startPortfolioAnalysis() {
                 if (valCell) valCell.innerText = formatCurrency(item.value);
 
             } catch (e) {
-                console.error(`Failed to fetch for ${item.url}`, e);
+                console.error(`Portfolio: Failed for ${item.url}`, e);
                 const valCell = item.row.querySelector('.portfolio-val');
                 if (valCell) valCell.innerText = 'Err';
             } finally {
                 completed++;
-                statusEl.innerHTML = `<small>Analyzing Portfolio: ${completed}/${holdings.length} companies...</small>`;
             }
         }));
 
-        // Small delay between chunks
+        // Delay between chunks to avoid overwhelming the queue
         if (i + chunkSize < holdings.length) {
-            await new Promise(r => setTimeout(r, 500));
+            await new Promise(r => setTimeout(r, 600));
         }
     }
 
@@ -320,48 +340,7 @@ async function startPortfolioAnalysis() {
         }
     });
 
-    statusEl.innerHTML = `
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-            <strong>Total Portfolio Value: ${formatCurrency(totalPortfolioValue)} Cr</strong>
-            <small style="color:var(--ink-500)">Calculated from ${holdings.length} holdings</small>
-        </div>
-    `;
-}
-
-async function fetchMarketCap(url) {
-    try {
-        const response = await fetch(url);
-        if (!response.ok) throw new Error('Network response was not ok');
-        const text = await response.text();
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(text, 'text/html');
-
-        // Robust selector for Market Cap
-        // Usually in topmost list: <li class="flex flex-space-between"> <span class="name">Market Cap</span> <span class="number">12,345</span> ...
-        const items = doc.querySelectorAll('li.flex');
-        for (let item of items) {
-            const name = item.querySelector('.name')?.innerText;
-            if (name && name.includes('Market Cap')) {
-                const num = item.querySelector('.number')?.innerText;
-                if (num) return parseFloat(num.replace(/,/g, ''));
-            }
-        }
-
-        // Fallback for older layouts or different screens
-        const spans = doc.querySelectorAll('.company-ratios span');
-        for (let i = 0; i < spans.length; i++) {
-            if (spans[i].innerText.includes('Market Cap')) {
-                // Next span usually has the number, or the one after
-                // This is less reliable, but a fallback.
-                // Better fallback: search for text in top-ratios
-            }
-        }
-
-        return 0;
-    } catch (e) {
-        console.warn("Market Cap Fetch Error", e);
-        return 0;
-    }
+    // Summary removed as per user request
 }
 
 function formatCurrency(val) {
@@ -405,10 +384,67 @@ async function init() {
 
         console.log(`Screener Filter: Strategy selected -> ${activeStrategy.name}`);
         injectSidebarUI();
+        initMobileObserver(); // Add observer for mobile modal
 
     } catch (err) {
         console.error("Screener Filter Init Error:", err);
     }
+}
+
+function initMobileObserver() {
+    // Watch for the modal being added to the DOM
+    const observer = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+            if (mutation.addedNodes.length) {
+                mutation.addedNodes.forEach((node) => {
+                    if (node.nodeType === 1 && node.matches('dialog.modal')) {
+                        // Modal added, check if it contains our filter
+                        handleMobileModal(node);
+                    }
+                });
+            }
+        });
+    });
+
+    observer.observe(document.body, { childList: true });
+}
+
+function handleMobileModal(modal) {
+    // delay slightly to let content settle if needed
+    setTimeout(() => {
+        const filterWrapper = modal.querySelector('.change-list-filter[data-ext="industry-filter"]');
+        if (filterWrapper) {
+            console.log("Screener Filter: Detected mobile modal. Re-initializing filter.");
+
+            // The content inside is dead (cloned without listeners).
+            // We need to clear the old content and re-inject the Combobox.
+            // Structure: details > div > combobox
+            const contentContainer = filterWrapper.querySelector('details > div');
+
+            if (contentContainer) {
+                // Clear dead content
+                contentContainer.innerHTML = '';
+
+                // Re-create Combobox
+                const industries = new Set(Object.values(stockMap));
+                const sortedIndustries = Array.from(industries).sort();
+
+                const combobox = new Combobox(sortedIndustries, async (selected) => {
+                    activeIndustry = selected;
+                    currentFetchId++;
+                    isFetchingAll = false;
+                    await applyFilter();
+                });
+
+                // If there was an active selection, restore it
+                if (activeIndustry) {
+                    combobox.input.value = activeIndustry;
+                }
+
+                contentContainer.appendChild(combobox.element);
+            }
+        }
+    }, 100);
 }
 
 function injectSidebarUI() {
@@ -455,17 +491,17 @@ function injectSidebarUI() {
     const warningContainer = document.createElement('span');
     warningContainer.className = 'screener-warning-container';
 
-    const warningIcon = document.createElement('span');
-    warningIcon.className = 'screener-warning-icon';
-    warningIcon.innerText = '!';
+    // Use Screener's native icon class 'icon-info'
+    const warningIcon = document.createElement('i');
+    warningIcon.className = 'icon-info screener-warning-icon';
 
     const tooltip = document.createElement('span');
     tooltip.className = 'screener-tooltip';
     tooltip.innerText = "Applying other filters after this filter would clear this filter. So, apply all the other filters you want before applying this.";
 
+    warningIcon.appendChild(tooltip); // Nesting inside icon for CSS hover
     warningContainer.appendChild(warningIcon);
-    warningIcon.appendChild(tooltip); // Nesting allows pure CSS hover
-    summary.appendChild(warningContainer);
+    summaryText.appendChild(warningContainer);
 
     const contentContainer = document.createElement('div');
     contentContainer.style.padding = "4px 0";

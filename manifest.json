@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Screener.in Industry Filter",
-  "version": "4.0.0",
+  "version": "4.1.0",
   "description": "Adds industry filtering to Screener.in results.",
   "permissions": [
     "storage"

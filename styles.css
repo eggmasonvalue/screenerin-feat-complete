@@ -220,6 +220,7 @@ body.dark {
 
 .portfolio-val {
   font-weight: 500;
+  color: var(--sif-secondary);
 }
 
 .portfolio-pct {
@@ -228,26 +229,23 @@ body.dark {
 
 /* Tooltip Styles */
 .screener-warning-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 15px;
-  height: 15px;
-  border: 1px solid #f0ad4e;
-  border-radius: 50%;
-  color: #f0ad4e;
+  display: inline-block;
+  margin-left: 10px;
+  color: #f59e0b;
+  /* Amber */
   cursor: help;
-  font-size: 10px;
-  font-weight: 700;
-  font-family: sans-serif;
+  font-size: 16px;
+  font-weight: 900;
   line-height: 1;
+  vertical-align: middle;
+  position: relative;
+  top: -2px;
 }
 
 .screener-tooltip {
   visibility: hidden;
   width: 200px;
   background-color: var(--sif-bg);
-  /* Use theme bg */
   color: var(--sif-text);
   text-align: left;
   border-radius: 4px;
@@ -255,15 +253,14 @@ body.dark {
   position: absolute;
   z-index: 1001;
   bottom: 125%;
-  /* Position above */
-  right: 0;
-  /* Anchor right */
+  left: 50%;
+  transform: translateX(-50%);
   opacity: 0;
-  transition: opacity 0.3s;
-  font-size: 11px;
+  transition: opacity 0.2s;
+  font-size: 12px;
   line-height: 1.4;
   border: 1px solid var(--sif-border);
-  box-shadow: 0 2px 5px var(--sif-shadow);
+  box-shadow: 0 4px 8px var(--sif-shadow);
   font-weight: normal;
 }
 
@@ -274,6 +271,6 @@ body.dark {
 
 .screener-warning-container {
   position: relative;
-  float: right;
   display: inline-block;
+  vertical-align: middle;
 }

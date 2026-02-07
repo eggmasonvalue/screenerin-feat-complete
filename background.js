@@ -260,7 +260,38 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         sendResponse({ started: true });
     } else if (request.action === "getScrapeStatus") {
         sendResponse(scrapingState);
+    } else if (request.action === "fetchMarketCap") {
+        fetchMarketCapFromPage(request.url)
+            .then(mcap => sendResponse({ mcap }))
+            .catch(err => sendResponse({ error: err.message }));
+        return true; // Keep channel open
     }
     return true; // Keep channel open
 });
+
+/**
+ * Specifically fetches and parses Market Cap for the portfolio feature
+ * @param {string} url 
+ * @returns {Promise<number>}
+ */
+async function fetchMarketCapFromPage(url) {
+    try {
+        const text = await fetchWithBackoff(url);
+
+        // Match: <span class="name">Market Cap</span> ... <span class="number">1,23,456</span>
+        // The structure is flexible with whitespace and tags
+        const mcapRegex = /Market\s+Cap[\s\S]*?class="number">([\d,.]+)</i;
+        const match = text.match(mcapRegex);
+
+        if (match) {
+            return parseFloat(match[1].replace(/,/g, ''));
+        }
+
+        console.warn(`Market Cap not found in HTML for ${url}`);
+        return 0;
+    } catch (e) {
+        console.error(`Error fetching Market Cap for ${url}:`, e);
+        throw e;
+    }
+}
 
