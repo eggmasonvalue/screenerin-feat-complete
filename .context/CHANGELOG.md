@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [4.3.0] - 2026-02-08
+### Added
+- **Release Automation**: GitHub Actions workflow to automatically build and publish .zip packages on version tags.
+
 ## [4.2.0] - 2026-02-07
 ### Major Features
 - **Superinvestor Portfolio Analysis**:

@@ -1,0 +1,70 @@
+name: Build and Release Extension
+
+on:
+  push:
+    tags:
+      - 'v*'  # Triggers on version tags like v4.2.0
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Extract version from manifest.json
+        id: get_version
+        run: |
+          VERSION=$(jq -r '.version' manifest.json)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Extension version: $VERSION"
+      
+      - name: Verify tag matches manifest version
+        run: |
+          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          MANIFEST_VERSION="${{ steps.get_version.outputs.version }}"
+          if [ "$TAG_VERSION" != "$MANIFEST_VERSION" ]; then
+            echo "Error: Tag version ($TAG_VERSION) does not match manifest.json version ($MANIFEST_VERSION)"
+            exit 1
+          fi
+          echo "Version check passed: $TAG_VERSION"
+      
+      - name: Build extension .zip
+        run: |
+          zip -r screener-industry-filter-v${{ steps.get_version.outputs.version }}.zip . \
+            -x "*.git*" \
+            -x ".context/*" \
+            -x "*.md" \
+            -x "LICENSE" \
+            -x ".github/*"
+          
+          echo "Created: screener-industry-filter-v${{ steps.get_version.outputs.version }}.zip"
+          ls -lh screener-industry-filter-v${{ steps.get_version.outputs.version }}.zip
+      
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.get_version.outputs.version }}
+          name: Release v${{ steps.get_version.outputs.version }}
+          body: |
+            ## Screener.in Industry Filter v${{ steps.get_version.outputs.version }}
+            
+            ### Installation Instructions
+            1. Download `screener-industry-filter-v${{ steps.get_version.outputs.version }}.zip`
+            2. Extract the zip file
+            3. Open Chrome and navigate to `chrome://extensions/`
+            4. Enable "Developer mode" (toggle in top-right)
+            5. Click "Load unpacked" and select the extracted folder
+            
+            ### What's Changed
+            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/.context/CHANGELOG.md) for details.
+
+            ### About
+            See [README.md](https://github.com/${{ github.repository }}/blob/main/README.md) for details.
+          files: |
+            screener-industry-filter-v${{ steps.get_version.outputs.version }}.zip
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
