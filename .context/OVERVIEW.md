@@ -6,8 +6,9 @@
 
 ## Core Features
 1.  **Global Industry Database**: Scrapes industry mappings from `/market/` and caches them locally (~3,100 stocks).
-2.  **Smart Filtering**: Injects a dropdown filter into stock lists to show/hide rows based on cached industry data.
-3.  **Privacy Focused**: Runs entirely locally after initial data fetch.
+2.  **Multi-Level Hierarchy Search**: Extracts and stores NSE's 4-level classification (Macro → Sector → Industry → Basic Industry) for each industry, enabling search by any level.
+3.  **Smart Filtering**: Injects a dropdown filter with hierarchy context into stock lists to show/hide rows based on cached industry data.
+4.  **Privacy Focused**: Runs entirely locally after initial data fetch.
 
 ## Tech Stack
 - **Platform**: Chrome Extension (Manifest V3)

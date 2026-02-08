@@ -7,6 +7,7 @@
 console.log("Screener Content Script Active (v1.10.0)");
 
 let stockMap = null;
+let industryHierarchy = null;
 let activeIndustry = "";
 let isFetchingAll = false;
 let currentFetchId = 0;
@@ -357,7 +358,7 @@ async function init() {
             return; // Exit, don't do industry filtering on people pages
         }
 
-        const data = await chrome.storage.local.get(['stockMap']);
+        const data = await chrome.storage.local.get(['stockMap', 'industryHierarchy']);
         if (!data.stockMap) {
             console.log("Screener Filter: No industry data found.");
             // Even if no industry data, we might want to allow other features if added later
@@ -365,6 +366,7 @@ async function init() {
             return;
         }
         stockMap = data.stockMap;
+        industryHierarchy = data.industryHierarchy || {};
 
         // Determine Strategy
         if (ListStrategy.matches(document)) {
@@ -423,7 +425,7 @@ function handleMobileModal(modal) {
                 const industries = new Set(Object.values(stockMap));
                 const sortedIndustries = Array.from(industries).sort();
 
-                const combobox = new Combobox(sortedIndustries, async (selected) => {
+                const combobox = new Combobox(sortedIndustries, industryHierarchy, async (selected) => {
                     activeIndustry = selected;
                     currentFetchId++;
                     isFetchingAll = false;
@@ -478,7 +480,7 @@ function injectSidebarUI() {
     summary.style.marginBottom = "8px";
 
     const summaryText = document.createElement('span');
-    summaryText.innerText = "By Industry";
+    summaryText.innerHTML = 'By Industry <a href="https://www.nseindia.com/static/products-services/industry-classification" target="_blank" rel="noopener noreferrer" style="font-size: 0.85em; font-weight: normal;">(NSE classification)</a>';
     summary.appendChild(summaryText);
 
     // Warning Icon with Tooltip
@@ -504,7 +506,7 @@ function injectSidebarUI() {
     const industries = new Set(Object.values(stockMap));
     const sortedIndustries = Array.from(industries).sort();
 
-    const combobox = new Combobox(sortedIndustries, async (selected) => {
+    const combobox = new Combobox(sortedIndustries, industryHierarchy, async (selected) => {
         activeIndustry = selected;
         currentFetchId++;
         isFetchingAll = false;
@@ -797,8 +799,9 @@ function getNextPageUrl(doc) {
 // -----------------------------------------------------
 
 class Combobox {
-    constructor(items, onSelect) {
+    constructor(items, hierarchyMap, onSelect) {
         this.items = items;
+        this.hierarchyMap = hierarchyMap || {};
         this.onSelect = onSelect;
         this.isOpen = false;
 
@@ -808,7 +811,7 @@ class Combobox {
         this.input = document.createElement('input');
         this.input.type = 'text';
         this.input.className = 'screener-combobox-input';
-        this.input.placeholder = 'Select Industry...';
+        this.input.placeholder = 'Search by any level...';
         this.input.addEventListener('keydown', (e) => e.stopPropagation());
 
         // Clear Button (X)
@@ -853,7 +856,20 @@ class Combobox {
 
     filterList() {
         const val = this.input.value.toLowerCase();
-        const matches = this.items.filter(i => i.toLowerCase().includes(val));
+        const matches = this.items.filter(basicIndustry => {
+            // Search across all hierarchy levels
+            const hierarchy = this.hierarchyMap[basicIndustry];
+            if (!hierarchy) {
+                // Fallback: just search the basic industry name
+                return basicIndustry.toLowerCase().includes(val);
+            }
+
+            // Match if search term appears in any level
+            return basicIndustry.toLowerCase().includes(val) ||
+                hierarchy.macro.toLowerCase().includes(val) ||
+                hierarchy.sector.toLowerCase().includes(val) ||
+                hierarchy.industry.toLowerCase().includes(val);
+        });
         this.renderList(matches);
     }
 
@@ -865,12 +881,29 @@ class Combobox {
             li.innerText = 'No matches';
             this.list.appendChild(li);
         } else {
-            matches.forEach(item => {
+            matches.forEach(basicIndustry => {
                 const li = document.createElement('li');
                 li.className = 'screener-combobox-item';
-                li.innerText = item;
-                // Removed inline hover/selection styles -> moved to CSS
-                li.addEventListener('mousedown', () => this.select(item));
+
+                // Main industry name
+                const mainText = document.createElement('div');
+                mainText.style.fontWeight = '500';
+                mainText.innerText = basicIndustry;
+
+                li.appendChild(mainText);
+
+                // Hierarchy path (if available)
+                const hierarchy = this.hierarchyMap[basicIndustry];
+                if (hierarchy) {
+                    const hierarchyText = document.createElement('div');
+                    hierarchyText.style.fontSize = '0.75em';
+                    hierarchyText.style.color = 'var(--sif-secondary, #666)';
+                    hierarchyText.style.marginTop = '2px';
+                    hierarchyText.innerText = `${hierarchy.macro} → ${hierarchy.sector} → ${hierarchy.industry}`;
+                    li.appendChild(hierarchyText);
+                }
+
+                li.addEventListener('mousedown', () => this.select(basicIndustry));
                 this.list.appendChild(li);
             });
         }

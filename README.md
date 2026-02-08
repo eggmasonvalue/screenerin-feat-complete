@@ -4,15 +4,22 @@ A powerful Chrome Extension that adds high-impact features to India's most belov
 
 ## 🚀 Features
 
-### 1. Industry Filter Widget
-- **Native Integration**: Adds a "By Industry" dropdown seamlessly into the Screener sidebar.
-- **Searchable Dropdown**: Easily find industries with a type-to-search interface.
+### 1. Industry Filter Widget with Multi-Level Search
+- **Native Integration**: Adds a "By Basic Industry" dropdown seamlessly into the Screener sidebar.
+- **Multi-Level Hierarchy Search**: Search industries by any NSE classification level:
+  - Type **"Consumer"** → See all Consumer Discretionary industries
+  - Type **"Auto"** → See all Automobile-related industries
+  - Type **"Chemicals"** → See all Chemical industries
+  - Or search directly by basic industry name (e.g., "2/3 Wheelers")
+- **Hierarchy Context**: Each industry displays its full classification path (Macro → Sector → Industry) below the name, helping you understand the NSE's 4-level structure at a glance.
 - **Broad Compatibility**: Works on multiple Screener.in pages:
   - **[Upcoming Results](https://www.screener.in/upcoming-results/)**
   - **[Latest Results](https://www.screener.in/results/latest/)**
   - **[Concalls](https://www.screener.in/concalls/)**
   - **[Upcoming Concalls](https://www.screener.in/concalls/upcoming/)** 
     - **Note**: this doesn't work. It's a placeholder for when screener.in adds filtering support for upcoming concalls.
+
+**Learn More**: Visit [NSE Industry Classification](https://www.nseindia.com/static/products-services/industry-classification) to understand the four levels: Macro Economic Sector → Sector → Industry → Basic Industry. The filter applies at the Basic Industry level but is searchable across all levels.
 
 ### 2. Aggregate Statistics
 - **Latest Results Analytics**: Among the filtered entities, view Median, Average, and Standard Deviation for YoY growth in Sales, EBITDA, Net Profit, and EPS.
@@ -46,13 +53,14 @@ A powerful Chrome Extension that adds high-impact features to India's most belov
     - Select an industry from the **"By Industry"** widget to filter.
 
 3. **Works on mobile views too**:
-    - Use mobile browsers like Microsoft Edge Canary or [Quetta](https://www.quetta.net/) (not an endorsement) that support custom extensions.
+    - Use mobile browsers like [Quetta](https://www.quetta.net/) (not an endorsement) that support custom extensions.
 
   Note: No setup required for superinvestor portfolio analysis.
 
 ## 🏗️ Architecture
 
 - **Manifest V3**: Secure and performant.
+- **Hierarchy Extraction**: During database initialization, extracts NSE's 4-level classification from breadcrumb navigation on each industry page and stores it for multi-level search.
 - **Specialized Strategies**:
     - `TableStrategy`: Handles standard data tables.
     - `ListStrategy`: Handles complex list/card layouts with paired DOM nodes.

@@ -94,18 +94,59 @@ async function fetchIndustryList() {
 }
 
 /**
- * Scrapes an individual industry page for stock symbols
+ * Scrapes an individual industry page for stock symbols and hierarchy
  * @param {string} url 
- * @returns {Promise<string[]>} List of stock symbols
+ * @returns {Promise<{symbols: string[], hierarchy: object}>}
  */
 async function scrapeIndustryPage(url) {
     const stocks = new Set();
+    let hierarchy = null;
     let nextUrl = `${url}?limit=100`;
 
     let pages = 0;
     while (nextUrl && pages < 10) { // Limit to 10 pages per industry to avoid infinite loops
         try {
             const text = await fetchWithBackoff(nextUrl);
+
+            // Extract hierarchy from breadcrumb (only on first page)
+            if (pages === 0 && !hierarchy) {
+                // Find the breadcrumb by locating the "Industries" link and getting its parent UL
+                // Pattern: <a href="/market/">Industries</a> ... <a>Macro</a> ... <a>Sector</a> ... <a>Industry</a> ... Basic Industry
+                const industriesLinkRegex = /<a[^>]*href="\/market\/"[^>]*>([^<]+)<\/a>/i;
+                const industriesMatch = text.match(industriesLinkRegex);
+
+                if (industriesMatch) {
+                    // Find the UL container that includes this link
+                    const ulStartIndex = text.lastIndexOf('<ul', industriesMatch.index);
+                    const ulEndIndex = text.indexOf('</ul>', industriesMatch.index) + 5;
+
+                    if (ulStartIndex !== -1 && ulEndIndex !== -1) {
+                        const breadcrumbHTML = text.substring(ulStartIndex, ulEndIndex);
+
+                        // Extract all link texts from breadcrumb (ignoring icons)
+                        const linkRegex = /<a[^>]*href="\/market\/[^"]*"[^>]*>([^<]+)<\/a>/g;
+                        const links = [...breadcrumbHTML.matchAll(linkRegex)].map(m => m[1].trim());
+
+                        // Also get the last text (Basic Industry) which might not be a link
+                        // Look for text after the last </a> tag
+                        const lastLinkIndex = breadcrumbHTML.lastIndexOf('</a>');
+                        const remainingHTML = breadcrumbHTML.substring(lastLinkIndex);
+                        const textMatch = remainingHTML.match(/>([^<>]+)</);
+                        const lastText = textMatch ? textMatch[1].trim() : '';
+
+                        // Expected links: ["Industries", "Macro", "Sector", "Industry"]
+                        // Plus lastText: "Basic Industry"
+                        if (links.length >= 4) {
+                            hierarchy = {
+                                macro: links[1],
+                                sector: links[2],
+                                industry: links[3],
+                                basicIndustry: lastText || links[4] || links[links.length - 1]
+                            };
+                        }
+                    }
+                }
+            }
 
             // Extract stock symbols from company links
             const stockRegex = /href="\/company\/([A-Za-z0-9-]+)\//g;
@@ -139,7 +180,10 @@ async function scrapeIndustryPage(url) {
         }
     }
 
-    return Array.from(stocks);
+    return {
+        symbols: Array.from(stocks),
+        hierarchy: hierarchy
+    };
 }
 
 /**
@@ -155,6 +199,7 @@ async function buildDatabase(sendProgress) {
         console.log(`Found ${industries.length} industries.`);
 
         const stockToIndustry = {};
+        const industryHierarchy = {};
         const timestamp = Date.now();
 
         const stats = {
@@ -178,14 +223,19 @@ async function buildDatabase(sendProgress) {
 
         for (const ind of industries) {
             try {
-                const symbols = await scrapeIndustryPage(ind.url);
+                const result = await scrapeIndustryPage(ind.url);
 
-                symbols.forEach(sym => {
+                result.symbols.forEach(sym => {
                     stockToIndustry[sym] = ind.name;
                 });
 
+                // Store hierarchy for this basic industry
+                if (result.hierarchy) {
+                    industryHierarchy[ind.name] = result.hierarchy;
+                }
+
                 stats.industriesScraped++;
-                stats.stocksFound += symbols.length;
+                stats.stocksFound += result.symbols.length;
 
             } catch (err) {
                 console.error(`Failed to scrape ${ind.name}`, err);
@@ -202,10 +252,11 @@ async function buildDatabase(sendProgress) {
             });
         }
 
-        console.log(`Database built. Saving ${Object.keys(stockToIndustry).length} stocks.`);
+        console.log(`Database built. Saving ${Object.keys(stockToIndustry).length} stocks and ${Object.keys(industryHierarchy).length} hierarchies.`);
 
         await chrome.storage.local.set({
             stockMap: stockToIndustry,
+            industryHierarchy: industryHierarchy,
             lastUpdated: timestamp,
             dbStats: stats
         });

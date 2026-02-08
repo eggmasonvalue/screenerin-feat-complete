@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [5.0.0] - 2026-02-09
+### Added
+- **Multi-Level Hierarchy Search**: Industry filter now extracts and stores NSE's 4-level classification (Macro → Sector → Industry → Basic Industry) for each industry during database initialization. Users can search by any hierarchy level (e.g., typing "Consumer" shows all Consumer Discretionary industries, "Auto" shows all automobile-related industries). Each dropdown item displays the full hierarchy path below the basic industry name for context and discoverability.
+
+### Changed
+- **Enhanced Dropdown Display**: Each industry in the dropdown now shows its full classification path (Macro → Sector → Industry) in smaller text below the basic industry name, making the hierarchy structure visible and helping users understand the classification system.
+
 ## [4.3.0] - 2026-02-08
 ### Added
 - **Release Automation**: GitHub Actions workflow to automatically build and publish .zip packages on version tags.

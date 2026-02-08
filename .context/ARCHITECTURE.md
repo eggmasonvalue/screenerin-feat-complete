@@ -6,15 +6,19 @@
 - **Role**: Data Aggregator.
 - **Responsibility**: 
   - Handles the "Warm-up" process (scraping `/market/` and sub-pages).
+  - **Hierarchy Extraction**: Parses breadcrumb navigation (`<ul>` containing "Industries" link) on each industry page to extract NSE's 4-level classification (Macro → Sector → Industry → Basic Industry).
   - Manages rate-limited fetching queue.
-  - Stores the resulting `Map<Symbol, Industry>` in `chrome.storage.local`.
+  - Stores the resulting `stockMap` (Symbol → Basic Industry) and `industryHierarchy` (Basic Industry → {macro, sector, industry, basicIndustry}) in `chrome.storage.local`.
   - **Global Backoff Manager**: Maintains a persistent rate-limiting backoff level and duration across all background and content script requests.
 
 ### 2. Content Script (`src/content/content.js`)
 - **Role**: UI Injector & Interactor.
 - **Responsibility**:
   - Runs on `screener.in/upcoming-results/*` and `screener.in/results/latest/*`.
-  - Injects **Custom Combobox** (Searchable Dropdown) into Sidebar.
+  - Injects **Custom Combobox** (Searchable Dropdown) into Sidebar with **Multi-Level Hierarchy Search**:
+    - Loads both `stockMap` and `industryHierarchy` from storage.
+    - Searches across all 4 hierarchy levels (macro, sector, industry, basicIndustry) for maximum discoverability.
+    - Displays each industry with its full hierarchy path (Macro → Sector → Industry) below the name for context.
   - **Specialized Strategies**:
     - `TableStrategy`: Handles standard `table.data-table` layouts (e.g. Upcoming Results). Injects status widget *inside* container cards to preserve layout.
     - `ListStrategy`: Handles `.mark-visited .flex-row` layouts (e.g. Latest Results). Manages paired Header+Data DOM nodes.
@@ -50,7 +54,7 @@ sequenceDiagram
     loop For each Industry
         Background->>Screener: GET /company/industry/...?limit=100
     end
-    Background->>Storage: Save { stockMap }
+    Background->>Storage: Save { stockMap, industryHierarchy }
     
     User->>Content: Navigates to /upcoming-results/
     Content->>Storage: Read stockMap
