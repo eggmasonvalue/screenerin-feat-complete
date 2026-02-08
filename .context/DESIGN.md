@@ -17,7 +17,7 @@
 | **Mobile Support** | ✅ Done | Filter persists and functions correctly when moved to modal on mobile view (uses MutationObserver). |
 | **Dark Mode Support** | ✅ Done | Adaptive UI that seamlessly integrates with Screener.in's native Light/Dark themes. |
 | **Release Automation** | ✅ Done | GitHub Actions workflow builds .zip packages on version tags and creates GitHub Releases. |
-| **Context Menu** | ❌ Not Planned | Context menu actions not required for v1. |
+| **Add earnings day reaction/next day reaction in the filtered results list** | ❌ Planned | upcoming |
 
 ## UX Decisions
 - **Lazy Load vs. Pre-fetch**: Switched to "Global Pre-fetch" (Warm-up) strategy.
