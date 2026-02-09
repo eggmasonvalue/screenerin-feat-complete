@@ -10,6 +10,8 @@
   - Manages rate-limited fetching queue.
   - Stores the resulting `stockMap` (Symbol → Basic Industry) and `industryHierarchy` (Basic Industry → {macro, sector, industry, basicIndustry}) in `chrome.storage.local`.
   - **Global Backoff Manager**: Maintains a persistent rate-limiting backoff level and duration across all background and content script requests.
+  - **Earnings Calendar** (`fetchEarningsCalendar`): Fetches BSE API for forthcoming results, extracts company short names + meeting dates, caches for 24 hours.
+  - **Price Charts** (`fetchPriceChart`): Fetches Screener chart API for 60-day price history.
 
 ### 2. Content Script (`src/content/content.js`)
 - **Role**: UI Injector & Interactor.
@@ -22,6 +24,10 @@
   - **Specialized Strategies**:
     - `TableStrategy`: Handles standard `table.data-table` layouts (e.g. Upcoming Results). Injects status widget *inside* container cards to preserve layout.
     - `ListStrategy`: Handles `.mark-visited .flex-row` layouts (e.g. Latest Results). Manages paired Header+Data DOM nodes.
+  - **Earnings Reaction** (`EarningsReaction` module):
+    - Target: `/results/latest/` pages.
+    - Extracts announcement date from URL params (`result_update_date__*`) or falls back to BSE calendar.
+    - Fetches price chart via Background → calculates T-1/T/T+1 reactions → injects ED/ND badges.
   - **Deep Scanning**: Robustly fetches subsequent pages for both Table and List views, ensuring financial data tables are correctly adopted and appended.
   - **Cleanup**: Implements `cleanupItems` to remove deep-fetched rows when filters change.
   - **Portfolio Analysis** (`PeopleStrategy`):

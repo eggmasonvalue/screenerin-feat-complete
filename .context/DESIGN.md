@@ -19,6 +19,7 @@
 | **Release Automation** | ✅ Done | GitHub Actions workflow builds .zip packages on version tags and creates GitHub Releases. |
 | **Multi-Level Hierarchy Search** | ✅ Done | Extracts NSE's 4-level classification from breadcrumb navigation during scraping. Users can search by any level (Macro/Sector/Industry/Basic Industry). Each dropdown item displays full hierarchy path for context. |
 | **Add earnings day reaction/next day reaction in the filtered results list** | ❌ Planned | upcoming |
+| **Add industry filter to insider trades** | ❌ Planned | upcoming |
 
 ## UX Decisions
 - **Lazy Load vs. Pre-fetch**: Switched to "Global Pre-fetch" (Warm-up) strategy.

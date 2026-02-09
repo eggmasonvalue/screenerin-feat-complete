@@ -316,6 +316,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             .then(mcap => sendResponse({ mcap }))
             .catch(err => sendResponse({ error: err.message }));
         return true; // Keep channel open
+    } else if (request.action === "fetchPriceChart") {
+        fetchPriceChart(request.companyId)
+            .then(prices => sendResponse({ prices }))
+            .catch(err => sendResponse({ error: err.message }));
+        return true; // Keep channel open
+    } else if (request.action === "getEarningsCalendar") {
+        fetchEarningsCalendar(request.fromDate, request.toDate)
+            .then(calendar => sendResponse({ calendar }))
+            .catch(err => sendResponse({ error: err.message }));
+        return true; // Keep channel open
     }
     return true; // Keep channel open
 });
@@ -346,3 +356,91 @@ async function fetchMarketCapFromPage(url) {
     }
 }
 
+/**
+ * Fetches earnings calendar from BSE API and caches it
+ * @param {string} fromDate YYYYMMDD format
+ * @param {string} toDate YYYYMMDD format
+ * @returns {Promise<Object>} Map of company short name -> meeting date info
+ */
+async function fetchEarningsCalendar(fromDate, toDate) {
+    const cacheKey = 'earningsCalendar';
+    const cacheExpiry = 24 * 60 * 60 * 1000; // 24 hours
+
+    // Check cache first
+    const cached = await chrome.storage.local.get([cacheKey, 'earningsCalendarTimestamp']);
+    if (cached[cacheKey] && cached.earningsCalendarTimestamp) {
+        const age = Date.now() - cached.earningsCalendarTimestamp;
+        if (age < cacheExpiry) {
+            console.log('Using cached earnings calendar');
+            return cached[cacheKey];
+        }
+    }
+
+    console.log(`Fetching BSE earnings calendar: ${fromDate} to ${toDate}`);
+
+    try {
+        const url = `https://api.bseindia.com/BseIndiaAPI/api/Corpforthresults/w?scripcode=&fromdate=${fromDate}&todate=${toDate}`;
+        const response = await fetch(url, {
+            headers: {
+                'Accept': 'application/json',
+                'Referer': 'https://www.bseindia.com/',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`BSE API returned ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        // Build lightweight map: { companyName -> { date, longName } }
+        const calendarMap = {};
+        for (const item of data) {
+            const shortName = (item.short_name || '').toUpperCase().trim();
+            const longName = (item.Long_Name || '').trim();
+            const meetingDate = item.meeting_date || '';
+
+            if (shortName && meetingDate) {
+                calendarMap[shortName] = { date: meetingDate, longName };
+            }
+        }
+
+        // Cache the result
+        await chrome.storage.local.set({
+            [cacheKey]: calendarMap,
+            earningsCalendarTimestamp: Date.now()
+        });
+
+        console.log(`Cached ${Object.keys(calendarMap).length} earnings entries`);
+        return calendarMap;
+
+    } catch (e) {
+        console.error('Failed to fetch BSE earnings calendar:', e);
+        // Return cached data if available, even if expired
+        if (cached[cacheKey]) {
+            console.log('Returning expired cache as fallback');
+            return cached[cacheKey];
+        }
+        return {};
+    }
+}
+
+/**
+ * Fetches price chart data from Screener API
+ * @param {string} companyId Screener company ID (from PDF link)
+ * @returns {Promise<Array>} Array of [timestamp, price] pairs
+ */
+async function fetchPriceChart(companyId) {
+    const url = `https://www.screener.in/api/company/${companyId}/chart/?q=Price&days=60`;
+
+    try {
+        const text = await fetchWithBackoff(url);
+        const data = JSON.parse(text);
+        // data.datasets[0].values = [[timestamp, price], ...]
+        return data.datasets?.[0]?.values || [];
+    } catch (e) {
+        console.error(`Failed to fetch price chart for ${companyId}:`, e);
+        throw e;
+    }
+}

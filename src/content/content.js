@@ -346,6 +346,258 @@ function formatCurrency(val) {
 }
 
 // -----------------------------------------------------
+// Earnings Reaction Feature
+// -----------------------------------------------------
+
+const EarningsReaction = {
+    /**
+     * Check if we're on a results page
+     */
+    isResultsPage: () => {
+        return window.location.pathname.includes('/results/latest');
+    },
+
+    /**
+     * Extract announcement date from URL query params
+     * @returns {Date|null}
+     */
+    getDateFromUrl: () => {
+        const url = new URL(window.location.href);
+        const day = url.searchParams.get('result_update_date__day');
+        const month = url.searchParams.get('result_update_date__month');
+        const year = url.searchParams.get('result_update_date__year');
+
+        if (day && month && year) {
+            return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+        }
+        return null;
+    },
+
+    /**
+     * Get company ID from PDF link in result card
+     * @param {Element} card - The result card element
+     * @returns {string|null}
+     */
+    getCompanyIdFromCard: (card) => {
+        // PDF link format: /company/source/quarter/{ID}/MM/YYYY/
+        const pdfLink = card.querySelector('a[href*="/company/source/quarter/"]');
+        if (!pdfLink) return null;
+        const match = pdfLink.href.match(/\/company\/source\/quarter\/(\d+)\//);
+        return match ? match[1] : null;
+    },
+
+    /**
+     * Get company symbol from card
+     * @param {Element} card
+     * @returns {string|null}
+     */
+    getSymbolFromCard: (card) => {
+        const link = card.querySelector('a[href^="/company/"]');
+        if (!link) return null;
+        return link.getAttribute('href').split('/')[2].split('#')[0].toUpperCase();
+    },
+
+    /**
+     * Calculate price reaction percentages
+     * @param {Array} prices - [[timestamp, price], ...] sorted by date
+     * @param {Date} announcementDate
+     * @returns {{ed: number|null, nd: number|null}}
+     */
+    calculateReaction: (prices, announcementDate) => {
+        if (!prices || prices.length === 0) return { ed: null, nd: null };
+
+        // Convert announcement date to timestamp (midnight)
+        const targetTs = announcementDate.getTime();
+
+        // Find closest prices for T-1, T, T+1
+        // Dates in API are typically at 18:30 IST (market close)
+        let priceT1 = null, priceT = null, priceT_plus1 = null;
+
+        // Sort by timestamp
+        const sorted = [...prices].sort((a, b) => a[0] - b[0]);
+
+        for (let i = 0; i < sorted.length; i++) {
+            const [ts, price] = sorted[i];
+            const dayDiff = Math.round((ts - targetTs) / (1000 * 60 * 60 * 24));
+
+            if (dayDiff === -1) priceT1 = price;
+            else if (dayDiff === 0) priceT = price;
+            else if (dayDiff === 1) priceT_plus1 = price;
+        }
+
+        // Calculate reactions
+        let ed = null, nd = null;
+        if (priceT1 && priceT) {
+            ed = ((priceT - priceT1) / priceT1) * 100;
+        }
+        if (priceT && priceT_plus1) {
+            nd = ((priceT_plus1 - priceT) / priceT) * 100;
+        }
+
+        return { ed, nd };
+    },
+
+    /**
+     * Create reaction badge HTML
+     * @param {number|null} ed - Earnings day reaction %
+     * @param {number|null} nd - Next day reaction %
+     * @returns {string}
+     */
+    createBadgeHtml: (ed, nd) => {
+        const formatVal = (val) => {
+            if (val === null) return 'N/A';
+            const sign = val >= 0 ? '+' : '';
+            return `${sign}${val.toFixed(1)}%`;
+        };
+
+        const getClass = (val) => {
+            if (val === null) return '';
+            return val >= 0 ? 'up' : 'down';
+        };
+
+        return `
+            <span class="screener-reaction" title="Earnings Day / Next Day price reaction">
+                <span class="screener-reaction-badge ${getClass(ed)}">ED: ${formatVal(ed)}</span>
+                <span class="screener-reaction-badge ${getClass(nd)}">ND: ${formatVal(nd)}</span>
+            </span>
+        `;
+    },
+
+    /**
+     * Inject reaction badge into a card
+     * @param {Element} card
+     * @param {number|null} ed
+     * @param {number|null} nd
+     */
+    injectBadge: (card, ed, nd) => {
+        // Remove existing badge if any
+        const existing = card.querySelector('.screener-reaction');
+        if (existing) existing.remove();
+
+        // Find injection point - after the company name link
+        const nameLink = card.querySelector('a[href^="/company/"]');
+        if (!nameLink) return;
+
+        const badge = document.createElement('span');
+        badge.innerHTML = EarningsReaction.createBadgeHtml(ed, nd);
+        nameLink.parentNode.insertBefore(badge.firstElementChild, nameLink.nextSibling);
+    },
+
+    /**
+     * Main entry point - process all result cards
+     */
+    init: async () => {
+        if (!EarningsReaction.isResultsPage()) return;
+
+        console.log('EarningsReaction: Initializing...');
+
+        // Get announcement date from URL
+        let announcementDate = EarningsReaction.getDateFromUrl();
+        let earningsCalendar = null;
+
+        // If no date in URL, we need the BSE calendar
+        if (!announcementDate) {
+            console.log('EarningsReaction: No date in URL, fetching BSE calendar');
+            // Get current quarter range
+            const now = new Date();
+            const fromDate = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+            const toDate = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+            const fromStr = fromDate.toISOString().slice(0, 10).replace(/-/g, '');
+            const toStr = toDate.toISOString().slice(0, 10).replace(/-/g, '');
+
+            try {
+                const response = await new Promise((resolve, reject) => {
+                    chrome.runtime.sendMessage({
+                        action: 'getEarningsCalendar',
+                        fromDate: fromStr,
+                        toDate: toStr
+                    }, (res) => {
+                        if (res?.error) reject(new Error(res.error));
+                        else resolve(res?.calendar || {});
+                    });
+                });
+                earningsCalendar = response;
+            } catch (e) {
+                console.error('EarningsReaction: Failed to fetch calendar', e);
+            }
+        }
+
+        // Get all result cards
+        const cards = activeStrategy?.getItems?.() || [];
+        if (cards.length === 0) {
+            console.log('EarningsReaction: No cards found');
+            return;
+        }
+
+        console.log(`EarningsReaction: Processing ${cards.length} cards`);
+
+        // Process cards in chunks to avoid overwhelming
+        const chunkSize = 5;
+        for (let i = 0; i < cards.length; i += chunkSize) {
+            const chunk = cards.slice(i, i + chunkSize);
+
+            await Promise.all(chunk.map(async (card) => {
+                try {
+                    // Get company symbol for chart API
+                    const symbol = EarningsReaction.getSymbolFromCard(card);
+                    if (!symbol) {
+                        EarningsReaction.injectBadge(card, null, null);
+                        return;
+                    }
+
+                    // Determine announcement date for this card
+                    let cardDate = announcementDate;
+
+                    if (!cardDate && earningsCalendar) {
+                        // Try to find in BSE calendar by symbol
+                        const symbol = EarningsReaction.getSymbolFromCard(card);
+                        if (symbol && earningsCalendar[symbol]) {
+                            // Parse date like "09 Feb 2026"
+                            const dateStr = earningsCalendar[symbol].date;
+                            cardDate = new Date(dateStr);
+                        }
+                    }
+
+                    if (!cardDate) {
+                        EarningsReaction.injectBadge(card, null, null);
+                        return;
+                    }
+
+                    // Fetch price chart using symbol
+                    const prices = await new Promise((resolve, reject) => {
+                        chrome.runtime.sendMessage({
+                            action: 'fetchPriceChart',
+                            companyId: symbol
+                        }, (res) => {
+                            if (res?.error) reject(new Error(res.error));
+                            else resolve(res?.prices || []);
+                        });
+                    });
+
+                    // Calculate reaction
+                    const { ed, nd } = EarningsReaction.calculateReaction(prices, cardDate);
+
+                    // Inject badge
+                    EarningsReaction.injectBadge(card, ed, nd);
+
+                } catch (e) {
+                    console.error('EarningsReaction: Error processing card', e);
+                    EarningsReaction.injectBadge(card, null, null);
+                }
+            }));
+
+            // Delay between chunks
+            if (i + chunkSize < cards.length) {
+                await new Promise(r => setTimeout(r, 200));
+            }
+        }
+
+        console.log('EarningsReaction: Complete');
+    }
+};
+
+// -----------------------------------------------------
 // Core Logic
 // -----------------------------------------------------
 
@@ -359,16 +611,8 @@ async function init() {
         }
 
         const data = await chrome.storage.local.get(['stockMap', 'industryHierarchy']);
-        if (!data.stockMap) {
-            console.log("Screener Filter: No industry data found.");
-            // Even if no industry data, we might want to allow other features if added later
-            // But for now, just return
-            return;
-        }
-        stockMap = data.stockMap;
-        industryHierarchy = data.industryHierarchy || {};
 
-        // Determine Strategy
+        // Determine Strategy for both industry filter and earnings reaction
         if (ListStrategy.matches(document)) {
             activeStrategy = ListStrategy;
         } else if (TableStrategy.matches(document)) {
@@ -379,6 +623,20 @@ async function init() {
         }
 
         console.log(`Screener Filter: Strategy selected -> ${activeStrategy.name}`);
+
+        // Initialize Earnings Reaction feature (works without industry data)
+        if (EarningsReaction.isResultsPage()) {
+            EarningsReaction.init();
+        }
+
+        // Industry filter requires stockMap
+        if (!data.stockMap) {
+            console.log("Screener Filter: No industry data found. Skipping industry filter.");
+            return;
+        }
+        stockMap = data.stockMap;
+        industryHierarchy = data.industryHierarchy || {};
+
         injectSidebarUI();
         initMobileObserver(); // Add observer for mobile modal
 
@@ -386,6 +644,7 @@ async function init() {
         console.error("Screener Filter Init Error:", err);
     }
 }
+
 
 function initMobileObserver() {
     // Watch for the modal being added to the DOM

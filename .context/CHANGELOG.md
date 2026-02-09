@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [5.1.0] - 2026-02-09
+### Added
+- **Earnings Reaction Badges**: On `/results/latest/` pages, displays **ED** (Earnings Day) and **ND** (Next Day) price reaction percentages next to each company name. Shows how the stock moved on result announcement day and the following day.
+- **BSE Earnings Calendar API**: Fetches forthcoming results from BSE API and caches for 24 hours. Used as fallback when the page URL lacks specific date parameters.
+- **Screener Price Chart API**: Fetches 60-day price history to calculate reaction percentages.
+
+### Changed
+- **Improved Init Flow**: The earnings reaction feature works independently of the industry filter, no longer requiring `stockMap` to be initialized first.
+
 ## [5.0.0] - 2026-02-09
 ### Added
 - **Multi-Level Hierarchy Search**: Industry filter now extracts and stores NSE's 4-level classification (Macro → Sector → Industry → Basic Industry) for each industry during database initialization. Users can search by any hierarchy level (e.g., typing "Consumer" shows all Consumer Discretionary industries, "Auto" shows all automobile-related industries). Each dropdown item displays the full hierarchy path below the basic industry name for context and discoverability.
