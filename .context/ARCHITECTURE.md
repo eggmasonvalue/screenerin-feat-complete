@@ -20,7 +20,7 @@
     - Searches across all 4 hierarchy levels (macro, sector, industry, basicIndustry) for maximum discoverability.
     - Displays each industry with its full hierarchy path (Macro → Sector → Industry) below the name for context.
   - **Specialized Strategies**:
-    - `TableStrategy`: Handles standard `table.data-table` layouts (e.g. Upcoming Results). Injects status widget *inside* container cards to preserve layout.
+    - `TableStrategy`: Handles standard `table.data-table` layouts (e.g. Upcoming Results). Injects status widget *inside* container cards to preserve layout. Adds and manages an "Industry" column dynamically.
     - `ListStrategy`: Handles `.mark-visited .flex-row` layouts (e.g. Latest Results). Manages paired Header+Data DOM nodes.
   - **Deep Scanning**: Robustly fetches subsequent pages for both Table and List views, ensuring financial data tables are correctly adopted and appended.
   - **Cleanup**: Implements `cleanupItems` to remove deep-fetched rows when filters change.

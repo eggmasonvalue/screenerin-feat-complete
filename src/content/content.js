@@ -77,6 +77,86 @@ const TableStrategy = {
 
     cleanupItems: () => {
         document.querySelectorAll('.extension-fetched-row').forEach(el => el.remove());
+    },
+
+    updateIndustryColumn: (show) => {
+        // Only run on Upcoming Results or Latest Results
+        if (!window.location.pathname.includes('/upcoming-results/') &&
+            !window.location.pathname.includes('/results/latest/')) return;
+
+        const table = document.querySelector('.responsive-holder table') ||
+            document.querySelector('table.data-table');
+        if (!table) return;
+
+        // 1. Handle Header
+        const theadRow = table.querySelector('thead tr');
+        if (theadRow) {
+            let th = theadRow.querySelector('.ext-industry-col');
+            if (show) {
+                if (!th) {
+                    th = document.createElement('th');
+                    th.className = 'ext-industry-col';
+
+                    // Wrap in <a> to match Screener's header styling (purple/blue color)
+                    // Use pointer-events: none to prevent it from looking clickable (no hand cursor)
+                    const link = document.createElement('a');
+                    link.href = "javascript:void(0)";
+                    link.innerText = 'Industry';
+                    link.style.pointerEvents = "none";
+                    link.style.cursor = "default";
+                    link.style.textDecoration = "none";
+
+                    th.appendChild(link);
+                    th.style.textAlign = 'left'; // Match typical text column alignment
+
+                    // Insert before the last column (Result Date) or at end if only 2 cols
+                    // Current: Company | Date. We want: Company | Industry | Date
+                    // So insert at index 1.
+                    const targetIndex = 1;
+                    if (theadRow.children.length > targetIndex) {
+                        theadRow.insertBefore(th, theadRow.children[targetIndex]);
+                    } else {
+                        theadRow.appendChild(th);
+                    }
+                }
+                th.style.display = '';
+            } else if (th) {
+                th.style.display = 'none';
+            }
+        }
+
+        // 2. Handle Rows
+        const rows = table.querySelectorAll('tbody tr');
+        rows.forEach(row => {
+            let td = row.querySelector('.ext-industry-col');
+
+            if (show) {
+                if (!td) {
+                    td = document.createElement('td');
+                    td.className = 'ext-industry-col';
+                    td.style.textAlign = 'left';
+
+                    const symbol = TableStrategy.getSymbol(row);
+                    const industry = stockMap[symbol];
+
+                    if (industry) {
+                        td.innerText = industry;
+                    } else {
+                        td.innerText = '-';
+                    }
+
+                    const targetIndex = 1;
+                    if (row.children.length > targetIndex) {
+                        row.insertBefore(td, row.children[targetIndex]);
+                    } else {
+                        row.appendChild(td);
+                    }
+                }
+                td.style.display = '';
+            } else if (td) {
+                td.style.display = 'none';
+            }
+        });
     }
 };
 
@@ -379,6 +459,12 @@ async function init() {
         }
 
         console.log(`Screener Filter: Strategy selected -> ${activeStrategy.name}`);
+
+        // Initial Industry Column Injection (Show by default)
+        if (activeStrategy.updateIndustryColumn) {
+            activeStrategy.updateIndustryColumn(true);
+        }
+
         injectSidebarUI();
         initMobileObserver(); // Add observer for mobile modal
 
@@ -535,8 +621,16 @@ async function applyFilter() {
     document.querySelector('.screener-scanner-status')?.remove();
 
     if (activeIndustry === "") {
+        if (activeStrategy.updateIndustryColumn) {
+            activeStrategy.updateIndustryColumn(true); // Show column when no filter
+        }
         showAllRows();
         return;
+    }
+
+    // Hide Industry column when filtering by industry (redundant info)
+    if (activeStrategy.updateIndustryColumn) {
+        activeStrategy.updateIndustryColumn(false);
     }
 
     const items = activeStrategy.getItems(document);

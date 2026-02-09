@@ -18,7 +18,11 @@
 | **Dark Mode Support** | ✅ Done | Adaptive UI that seamlessly integrates with Screener.in's native Light/Dark themes. |
 | **Release Automation** | ✅ Done | GitHub Actions workflow builds .zip packages on version tags and creates GitHub Releases. |
 | **Multi-Level Hierarchy Search** | ✅ Done | Extracts NSE's 4-level classification from breadcrumb navigation during scraping. Users can search by any level (Macro/Sector/Industry/Basic Industry). Each dropdown item displays full hierarchy path for context. |
-| **Add earnings day reaction/next day reaction in the filtered results list** | ❌ Planned | upcoming |
+| **Industry Column** | ✅ Done | Injects "Industry" column into *Upcoming Results* table. Populates from local cache. Hides when filtered. |
+| **Add earnings day reaction/next day reaction in the filtered results list** | ❌ Planned | put in ice. too much complexity |
+| **Add industry filter to insider trades** | ❌ Planned | low priority |
+| **Add earnings day reaction/next day reaction in the stock's page in the quarterly results section for each stock** | ❌ Planned | started |
+
 
 ## UX Decisions
 - **Lazy Load vs. Pre-fetch**: Switched to "Global Pre-fetch" (Warm-up) strategy.
