@@ -438,6 +438,12 @@ async function init() {
             return; // Exit, don't do industry filtering on people pages
         }
 
+        // Check for Company Page Strategy
+        if (CompanyStrategy.matches(document)) {
+            await CompanyStrategy.init();
+            return;
+        }
+
         const data = await chrome.storage.local.get(['stockMap', 'industryHierarchy']);
         if (!data.stockMap) {
             console.log("Screener Filter: No industry data found.");
@@ -1020,6 +1026,504 @@ class Combobox {
         this.close();
     }
 }
+
+// -----------------------------------------------------
+// Company Page Strategy (Ratios)
+// -----------------------------------------------------
+
+const CompanyStrategy = {
+    name: 'CompanyStrategy',
+    matches: (doc) => {
+        return window.location.pathname.includes('/company/');
+    },
+    init: async () => {
+        console.log("Screener Filter: Company Strategy Active");
+
+        // Wait for Ratios section (max 5 seconds)
+        let retries = 0;
+        while (!document.querySelector('#ratios') && retries < 10) {
+            await new Promise(r => setTimeout(r, 500));
+            retries++;
+        }
+
+        if (!document.querySelector('#ratios')) {
+            console.warn("Screener Filter: Ratios section not found after waiting.");
+            return;
+        }
+
+        // 0. Pre-expansion: Expand "Expenses" to get Material/Employee costs
+        await CompanyStrategy.expandExpenses();
+
+        // 1. Data Parsing
+        const financialData = DataParser.parseAll();
+        if (!financialData) {
+            console.error("Screener Filter: Failed to parse financial data.");
+            return;
+        }
+
+        // 2. Initialize UI
+        RatioUI.init(financialData);
+    },
+
+    expandExpenses: async () => {
+        const plTable = document.querySelector('#profit-loss table');
+        if (!plTable) return;
+
+        // Find Expenses button
+        const buttons = Array.from(plTable.querySelectorAll('button.button-plain'));
+        const expBtn = buttons.find(b => b.innerText.includes('Expenses'));
+
+        if (expBtn && expBtn.querySelector('span')?.innerText.includes('+')) {
+            expBtn.click();
+            // Wait a tiny bit for expansion (usually instant but good to be safe)
+            await new Promise(r => setTimeout(r, 50));
+        }
+    }
+};
+
+const DataParser = {
+    parseAll: () => {
+        const years = DataParser.getYears();
+        if (!years.length) {
+            console.error("Screener Filter: Could not find years in Balance Sheet.");
+            return null;
+        }
+
+        const data = {
+            years: years,
+            pl: DataParser.parseTable('#profit-loss table'),
+            bs: DataParser.parseTable('#balance-sheet table'),
+            cf: DataParser.parseTable('#cash-flow table')
+        };
+        return data;
+    },
+
+    getYears: () => {
+        // Try to get years from Balance Sheet (usually most consistent)
+        const table = document.querySelector('#balance-sheet table');
+        if (!table) return [];
+
+        const headerRow = table.querySelector('thead tr');
+        if (!headerRow) return [];
+
+        // Skip first cell (Metric name)
+        const headers = Array.from(headerRow.querySelectorAll('th')).slice(1);
+        return headers.map(th => th.innerText.trim());
+    },
+
+    parseTable: (selector) => {
+        const table = document.querySelector(selector);
+        if (!table) return {};
+
+        const rows = Array.from(table.querySelectorAll('tbody tr'));
+        const result = {};
+
+        rows.forEach(row => {
+            const cells = row.querySelectorAll('td');
+            if (cells.length < 2) return;
+
+            // Clean metric name: "Sales +", "Expenses +" -> "Sales", "Expenses"
+            let metricName = cells[0].innerText.trim().replace(/\s*[+\-]$/, '').trim();
+
+            const values = [];
+            for (let i = 1; i < cells.length; i++) {
+                const txt = cells[i].innerText.trim().replace(/,/g, '');
+                // Handle percentages in text if present (e.g. "12%")
+                const val = parseFloat(txt.replace('%', ''));
+                values.push(isNaN(val) ? null : val);
+            }
+
+            result[metricName] = values;
+        });
+
+        return result;
+    }
+};
+
+const RatioCalculator = {
+    calculate: (data, ratioConfig) => {
+        const results = [];
+        for (let i = 0; i < data.years.length; i++) {
+            try {
+                // Helper to safely get value for year i
+                const get = (source, key) => {
+                    const row = data[source][key];
+                    return row ? row[i] : null;
+                };
+
+                // Context for formula
+                const ctx = {
+                    pl: (key) => get('pl', key),
+                    bs: (key) => get('bs', key),
+                    cf: (key) => get('cf', key),
+                    prev: (source, key) => {
+                        if (i === 0) return null;
+                        const row = data[source][key];
+                        return row ? row[i - 1] : null;
+                    }
+                };
+
+                const val = ratioConfig.formula(ctx);
+                results.push(val);
+            } catch (e) {
+                results.push(null);
+            }
+        }
+        return results;
+    }
+};
+
+// Unit Helper
+const U = {
+    pct: (val) => val !== null ? val.toFixed(2) + '%' : '-',
+    num: (val) => val !== null ? val.toFixed(2) : '-',
+    days: (val) => val !== null ? Math.round(val) + ' Days' : '-',
+    times: (val) => val !== null ? val.toFixed(2) + 'x' : '-'
+};
+
+const RatioTemplates = {
+    'Screener Default': [
+        // These will be populated from the existing table
+        { name: 'ROCE %', unit: 'pct', formula: c => c.pl('ROCE %') || null },
+        { name: 'Debtor Days', unit: 'days', formula: c => null }, // Placeholder
+        { name: 'Inventory Days', unit: 'days', formula: c => null }, // Placeholder
+        { name: 'Days Payable', unit: 'days', formula: c => null }, // Placeholder
+        { name: 'Cash Conversion Cycle', unit: 'days', formula: c => null }, // Placeholder
+        { name: 'Working Capital Days', unit: 'days', formula: c => null } // Placeholder
+    ],
+    'Efficiency': [
+        {
+            name: 'ROE %', unit: 'pct', formula: c => {
+                const equity = c.bs('Share Capital') + c.bs('Reserves');
+                const prevEquity = (c.prev('bs', 'Share Capital') || 0) + (c.prev('bs', 'Reserves') || 0);
+                const avgEquity = prevEquity ? (equity + prevEquity) / 2 : equity;
+                return c.pl('Net Profit') / avgEquity * 100;
+            }
+        },
+        {
+            name: 'ROCE %', unit: 'pct', formula: c => {
+                const ebit = c.pl('Profit before tax') + (c.pl('Interest') || c.pl('Finance Costs') || 0);
+                const capitalEmployed = (c.bs('Share Capital') + c.bs('Reserves') + c.bs('Borrowings'));
+                const prevCap = (c.prev('bs', 'Share Capital') + c.prev('bs', 'Reserves') + c.prev('bs', 'Borrowings'));
+                const avgCap = prevCap ? (capitalEmployed + prevCap) / 2 : capitalEmployed;
+                return avgCap ? ebit / avgCap * 100 : null;
+            }
+        },
+        {
+            name: 'ROIC %', unit: 'pct', formula: c => {
+                // Approximate NOPAT = EBIT * (1 - 0.25) [Assume 25% tax rate as safe default]
+                const ebit = c.pl('Profit before tax') + (c.pl('Interest') || c.pl('Finance Costs') || 0);
+                const nopat = ebit * 0.75;
+
+                const investedCapital = (c.bs('Share Capital') + c.bs('Reserves') + c.bs('Borrowings')) - (c.bs('Cash Equivalents') || 0);
+                const prevIC = (c.prev('bs', 'Share Capital') + c.prev('bs', 'Reserves') + c.prev('bs', 'Borrowings')) - (c.prev('bs', 'Cash Equivalents') || 0);
+
+                const avgIC = prevIC ? (investedCapital + prevIC) / 2 : investedCapital;
+                return avgIC ? nopat / avgIC * 100 : null;
+            }
+        },
+        {
+            name: 'Inventory Turnover', unit: 'times', formula: c => {
+                const sales = c.pl('Sales');
+                const inv = c.bs('Inventories');
+                const prevInv = c.prev('bs', 'Inventories');
+                const avgInv = prevInv ? (inv + prevInv) / 2 : inv;
+                return avgInv ? sales / avgInv : null;
+            }
+        },
+        {
+            name: 'Fixed Asset Turnover', unit: 'times', formula: c => {
+                const sales = c.pl('Sales');
+                const fa = c.bs('Fixed Assets');
+                const prevFa = c.prev('bs', 'Fixed Assets');
+                const avgFa = prevFa ? (fa + prevFa) / 2 : fa;
+                return avgFa ? sales / avgFa : null;
+            }
+        },
+        {
+            name: 'Debtor Days', unit: 'days', formula: c => {
+                const sales = c.pl('Sales');
+                const rec = c.bs('Trade Receivables');
+                const prevRec = c.prev('bs', 'Trade Receivables');
+                const avgRec = prevRec ? (rec + prevRec) / 2 : rec;
+                return sales ? (avgRec / sales) * 365 : null;
+            }
+        }
+    ],
+    'Liquidity': [
+        {
+            name: 'Current Ratio', unit: 'times', formula: c => {
+                const currAssets = (c.bs('Inventories') || 0) + (c.bs('Trade Receivables') || 0) + (c.bs('Cash Equivalents') || 0) + (c.bs('Other Assets') || 0);
+                const currLiab = (c.bs('Trade Payables') || 0) + (c.bs('Other Liabilities') || 0);
+                return currLiab ? currAssets / currLiab : null;
+            }
+        },
+        {
+            name: 'Quick Ratio', unit: 'times', formula: c => {
+                const quickAssets = (c.bs('Trade Receivables') || 0) + (c.bs('Cash Equivalents') || 0) + (c.bs('Other Assets') || 0);
+                const currLiab = (c.bs('Trade Payables') || 0) + (c.bs('Other Liabilities') || 0);
+                return currLiab ? quickAssets / currLiab : null;
+            }
+        },
+        {
+            name: 'Cash Ratio', unit: 'times', formula: c => {
+                const cash = c.bs('Cash Equivalents') || 0;
+                const currLiab = (c.bs('Trade Payables') || 0) + (c.bs('Other Liabilities') || 0);
+                return currLiab ? cash / currLiab : null;
+            }
+        }
+    ],
+    'Solvency': [
+        {
+            name: 'Debt to Equity', unit: 'times', formula: c => {
+                const debt = c.bs('Borrowings');
+                const equity = (c.bs('Share Capital') || 0) + (c.bs('Reserves') || 0);
+                return equity ? debt / equity : null;
+            }
+        },
+        {
+            name: 'Interest Coverage', unit: 'times', formula: c => {
+                const op = c.pl('Operating Profit');
+                const int = c.pl('Interest');
+                return int ? op / int : null;
+            }
+        },
+        {
+            name: 'Debt to Assets', unit: 'times', formula: c => {
+                const debt = c.bs('Borrowings');
+                const assets = (c.bs('Fixed Assets') || 0) + (c.bs('CWIP') || 0) + (c.bs('Investments') || 0) + (c.bs('Other Assets') || 0) +
+                    (c.bs('Inventories') || 0) + (c.bs('Trade Receivables') || 0) + (c.bs('Cash Equivalents') || 0);
+                return assets ? debt / assets : null;
+            }
+        },
+        {
+            name: 'Financial Leverage', unit: 'times', formula: c => {
+                const assets = (c.bs('Fixed Assets') || 0) + (c.bs('CWIP') || 0) + (c.bs('Investments') || 0) + (c.bs('Other Assets') || 0) +
+                    (c.bs('Inventories') || 0) + (c.bs('Trade Receivables') || 0) + (c.bs('Cash Equivalents') || 0);
+                const equity = (c.bs('Share Capital') || 0) + (c.bs('Reserves') || 0);
+                return equity ? assets / equity : null;
+            }
+        }
+    ],
+    'Cash Flow': [
+        {
+            name: 'CFO / EBITDA', formula: c => {
+                const cfo = c.cf('Cash from Operating Activity');
+                const ebitda = c.pl('Operating Profit') + (c.pl('Other Income') || 0);
+                return ebitda ? cfo / ebitda : null;
+            }
+        },
+        {
+            name: 'CFO / PAT', formula: c => {
+                const cfo = c.cf('Cash from Operating Activity');
+                const pat = c.pl('Net Profit');
+                return pat ? cfo / pat : null;
+            }
+        },
+        {
+            name: 'FCF Conversion', formula: c => {
+                const cfo = c.cf('Cash from Operating Activity');
+                const capex = Math.abs(c.cf('Fixed assets purchased') || 0);
+                const fcf = cfo - capex;
+                const pat = c.pl('Net Profit');
+                return pat ? fcf / pat * 100 : null;
+            }
+        }
+    ]
+};
+
+const RatioUI = {
+    state: {
+        template: 'Screener Default' // Set default to 'Screener Default'
+    },
+    data: null,
+    defaultRatiosMap: {}, // To store pre-calculated values
+
+    init: (data) => {
+        RatioUI.data = data;
+        const container = document.querySelector('#ratios');
+        if (!container) return;
+
+        if (!container) return;
+
+        // Inject dynamic styles based on current theme
+        RatioUI.injectStyles(container);
+
+        // 1. Capture Existing Default Ratios (Read Phase)
+        // We do this BEFORE modifying the DOM to ensure we capture the original values.
+        RatioUI.captureDefaultRatios(container);
+
+        // Restore Header & Structure
+        let header = container.querySelector('h2');
+        if (!header) {
+            header = document.createElement('h2');
+            header.innerText = 'Ratios';
+            container.prepend(header);
+        } else {
+            header.innerText = 'Ratios';
+        }
+
+        // Add Flex container for Header + Controls if not present
+        if (!header.parentElement.classList.contains('flex-row')) {
+            const headerRow = document.createElement('div');
+            headerRow.className = 'flex-row';
+            headerRow.style.alignItems = 'baseline'; // Baseline for proper text alignment
+            headerRow.style.marginBottom = '16px';
+
+            // Allow header to sit naturally
+            header.style.marginBottom = '0';
+            header.style.marginRight = '8px';
+            header.style.lineHeight = '1'; // Ensure line-height doesn't shift baseline
+
+            // Move header into row
+            header.parentElement.insertBefore(headerRow, header);
+            headerRow.appendChild(header);
+
+            // Container for controls - positioned immediately after header
+            const controlsContainer = document.createElement('div');
+            controlsContainer.id = 'ratio-controls';
+            // No margin needed if header has margin-right
+            headerRow.appendChild(controlsContainer);
+        }
+
+        // Remove old content (Table) but keep the new header structure
+        const oldTable = container.querySelector('.responsive-holder');
+        if (oldTable) oldTable.remove();
+
+        // 2. Table Container
+        const tableResponsive = document.createElement('div');
+        tableResponsive.className = 'responsive-holder fill-card-width';
+
+        const table = document.createElement('table');
+        table.className = 'data-table';
+        table.innerHTML = `
+            <thead>
+                <tr>
+                    <th class="text-left">Ratio</th>
+                    ${data.years.map(y => `<th>${y}</th>`).join('')} 
+                </tr>
+            </thead>
+            <tbody id="ratio-table-body"></tbody>
+        `;
+
+        tableResponsive.appendChild(table);
+        container.appendChild(tableResponsive);
+
+
+
+        // Initialize State
+        // Ensure 'Screener Default' is always the starting template
+
+        RatioUI.state.template = 'Screener Default';
+
+        // Initial Render
+        RatioUI.renderControls();
+        RatioUI.renderTable();
+    },
+
+    captureDefaultRatios: (container) => {
+        // Scrape the existing table to populate defaultRatiosMap
+        const table = container.querySelector('table');
+        if (!table) return;
+
+        const rows = Array.from(table.querySelectorAll('tbody tr'));
+        rows.forEach(row => {
+            const cells = row.querySelectorAll('td');
+            if (cells.length < 2) return;
+
+            const name = cells[0].innerText.trim();
+            const values = [];
+            for (let i = 1; i < cells.length; i++) {
+                values.push(cells[i].innerText.trim()); // Keep as string to preserve exact formatting
+            }
+            RatioUI.defaultRatiosMap[name] = values;
+        });
+    },
+
+    renderControls: () => {
+        const controls = document.querySelector('#ratio-controls');
+        if (!controls) return;
+
+        const templates = Object.keys(RatioTemplates);
+
+        controls.innerHTML = `
+            <select id="ratio-template-select" class="ratio-select">
+                ${templates.map(t => `<option value="${t}" ${RatioUI.state.template === t ? 'selected' : ''}>${t}</option>`).join('')}
+            </select>
+        `;
+
+        // Bind Control Events
+        const tmplSelect = controls.querySelector('#ratio-template-select');
+        tmplSelect.addEventListener('change', (e) => {
+            RatioUI.setTemplate(e.target.value);
+        });
+    },
+
+    renderTable: () => {
+        const tbody = document.querySelector('#ratio-table-body');
+        if (!tbody) return;
+
+        const ratios = RatioTemplates[RatioUI.state.template];
+
+        tbody.innerHTML = ratios.map((r) => {
+            let values;
+
+            // Use captured default values if available
+            if (RatioUI.defaultRatiosMap[r.name]) {
+                values = RatioUI.defaultRatiosMap[r.name];
+            } else {
+                const rawValues = RatioCalculator.calculate(RatioUI.data, r);
+                const fmt = r.unit && U[r.unit] ? U[r.unit] : U.num;
+                values = rawValues.map(v => fmt(v));
+            }
+
+            return `
+                <tr>
+                    <td class="text-left" style="font-weight: 500;">${r.name}</td>
+                    ${values.map(v => `<td>${v}</td>`).join('')}
+                </tr>
+            `;
+        }).join('');
+    },
+
+    setTemplate: (name) => {
+        RatioUI.state.template = name;
+        RatioUI.renderTable();
+        RatioUI.renderControls();
+    },
+
+    injectStyles: (container) => {
+        if (document.getElementById('ratio-dynamic-styles')) return;
+
+        const style = document.createElement('style');
+        style.id = 'ratio-dynamic-styles';
+        style.textContent = `
+            .ratio-select {
+                font-size: inherit; 
+                font-family: inherit; 
+                font-weight: 500; 
+                color: var(--sif-text, inherit); 
+                border: none; 
+                background-color: transparent;
+                background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="gray" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>');
+                background-repeat: no-repeat;
+                background-position: right center;
+                padding-right: 20px;
+                padding-left: 4px;
+                cursor: pointer; 
+                outline: none;
+                margin: 0;
+                appearance: none;
+                -webkit-appearance: none;
+            }
+            .ratio-select option {
+                background-color: var(--sif-bg, #fff);
+                color: var(--sif-text, #333);
+            }
+        `;
+        document.head.appendChild(style);
+    }
+};
 
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);

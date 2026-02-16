@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [5.1.0] - 2026-02-16
+### Added
+- **Company Ratios Re-implementation**: Successfully restored and refined the "Ratios" widget on company pages (`/company/*`).
+- **Templated Ratios**: New categorized views: "Efficiency", "Liquidity", "Solvency", and "Cash Flow".
+- **Instant Theme Adaptation**: The UI now uses native CSS variables (`--sif-bg`, `--sif-text`) for instant, refresh-free transitions between Light and Dark modes.
+
+### Changed
+- **Simplified UI**: Removed custom ratio functionality to ensure a cleaner, more native experience.
+- **Precise Alignment**: Refined the dropdown's positioning to be vertically centered/baseline-aligned with the "Ratios" header.
+- **Default Data Capture**: Implemented a "Read Phase" to capture Screener's original default ratios from the DOM before rendering custom templates, preventing data loss.
+
+### Fixed
+- **Dark Mode Dropdown**: Resolved an issue where the dropdown background remained white in dark mode.
+- **Zero-Value Ratios**: Fixed a bug where calculated ratios would show 0 if default values weren't captured correctly.
+- **UI Encroachment**: Fixed layout issues where text would overlap with dropdown arrows.
+
 ## [5.0.0] - 2026-02-09
 ### Added
 - **Multi-Level Hierarchy Search**: Industry filter now extracts and stores NSE's 4-level classification (Macro → Sector → Industry → Basic Industry) for each industry during database initialization. Users can search by any hierarchy level (e.g., typing "Consumer" shows all Consumer Discretionary industries, "Auto" shows all automobile-related industries). Each dropdown item displays the full hierarchy path below the basic industry name for context and discoverability.

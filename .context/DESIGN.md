@@ -19,10 +19,8 @@
 | **Release Automation** | ✅ Done | GitHub Actions workflow builds .zip packages on version tags and creates GitHub Releases. |
 | **Multi-Level Hierarchy Search** | ✅ Done | Extracts NSE's 4-level classification from breadcrumb navigation during scraping. Users can search by any level (Macro/Sector/Industry/Basic Industry). Each dropdown item displays full hierarchy path for context. |
 | **Industry Column** | ✅ Done | Injects "Industry" column into *Upcoming Results* table. Populates from local cache. Hides when filtered. |
-| **Add earnings day reaction/next day reaction in the filtered results list** | ❌ Planned | put in ice. too much complexity |
-| **Add industry filter to insider trades** | ❌ Planned | low priority |
-| **Add earnings day reaction/next day reaction in the stock's page in the quarterly results section for each stock** | ❌ Planned | started |
-
+| **Company Ratios** | ✅ Done | Re-implemented ratios widget on `/company/` pages. Features categorized templates and native-aligned dropdown. |
+| **Add earnings day reaction...**| ❌ Planned | put in ice. too much complexity |
 
 ## UX Decisions
 - **Lazy Load vs. Pre-fetch**: Switched to "Global Pre-fetch" (Warm-up) strategy.
@@ -38,3 +36,8 @@
   - **Breadcrumb Extraction**: Parses the `<ul>` containing the "Industries" link to extract all 4 hierarchy levels.
   - **Search Scope**: Searches across all fields (macro, sector, industry, basicIndustry) for maximum discoverability.
   - **Display Format**: Shows basic industry name (bold) with hierarchy path below (smaller, lighter text) for context.
+- **Ratios Dashboard**:
+  - **Clean UI**: Removed custom ratio functionality to prevent layout drift and maintain a native "one-line" look.
+  - **Native Aligned**: Used `baseline` and `center` alignment with `18px` font size to match Screener's native headers.
+  - **Adaptive CSS**: Switched from JS-computed styles to static CSS variables (`--sif-*`) for instant theme switching without reload.
+  - **Data Preservation**: Implemented a "Read Phase" to scrape the original DOM table before it is modified, ensuring Screener's default ratios are never lost.

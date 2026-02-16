@@ -27,6 +27,9 @@
   - **Portfolio Analysis** (`PeopleStrategy`):
     - Target: `screener.in/people/*`
     - Logic: Detects Shareholdings table -> Injects Columns -> Fetches Market Cap (via Background) -> Calculates Value from latest holding.
+  - **Company Ratios Dashboard** (`RatioUI`):
+    - Target: `screener.in/company/*`
+    - Logic: Scrapes initial default ratios -> Injects template-based ratios (Efficiency, Solvency, etc.) -> Dynamic UI aligned with native header.
 - **Mobile Resilience**: Uses `MutationObserver` to watch for header/sidebar transformations (common when Screener.in switches to modal-based filters on mobile) and re-executes injection logic.
 - **Styling (`src/content/styles.css`)**: Adaptive CSS for light/dark modes and custom UI components.
 

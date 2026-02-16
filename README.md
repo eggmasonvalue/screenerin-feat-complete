@@ -27,8 +27,14 @@ A powerful Chrome Extension that adds high-impact features to India's most belov
 ### 3. Superinvestor portfolio analysis
   - `screener.in/people/*/#shareholdings` pages now have **"₹ Cr"** (Value) and **"% PF"** (Percentage of Portfolio) columns.
 
-### 4. Seamless UI/UX
-- **Dark Mode Support**: Adaptive UI that matches Screener.in's native Light and Dark themes.
+### 4. Company Ratios Dashboard
+- **Instant Insights**: Re-imagines the Ratios section on individual company pages.
+- **Multiple Templates**: Quickly switch between different analytical views (Efficiency, Liquidity, Solvency, Cash Flow, etc.).
+- **Smart Data Capture**: Preserves Screener's native default ratios by capturing them directly from the DOM.
+- **Seamless UI**: Vertically centered and baseline-aligned with the native header for a clean, integrated look.
+
+### 5. Seamless UI/UX
+- **Dark Mode Support**: Adaptive UI that matches Screener.in's native Light and Dark themes instantly using CSS variables.
 - **Native Experience**: Clean integration, in line with screener's beloved UI/UX.
 
 ## 🛠️ Installation
