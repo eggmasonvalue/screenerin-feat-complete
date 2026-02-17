@@ -20,17 +20,24 @@
 | **Multi-Level Hierarchy Search** | ✅ Done | Extracts NSE's 4-level classification from breadcrumb navigation during scraping. Users can search by any level (Macro/Sector/Industry/Basic Industry). Each dropdown item displays full hierarchy path for context. |
 | **Industry Column** | ✅ Done | Injects "Industry" column into *Upcoming Results* table. Populates from local cache. Hides when filtered. |
 | **Company Ratios** | ✅ Done | Re-implemented ratios widget on `/company/` pages. Features categorized templates and native-aligned dropdown. |
-| **Add earnings day reaction...**| ❌ Planned | put in ice. too much complexity |
+| **Add earnings day reaction...**| ✅ Done | Fetches quarterly filing dates and historical prices from NSE to compute reactions (Day of, Next Day, 1 Week). |
 
 ## UX Decisions
 - **Lazy Load vs. Pre-fetch**: Switched to "Global Pre-fetch" (Warm-up) strategy.
 - **Rate Limiting**: 
   - **Dynamic Backoff**: Starts at 5s, grows by 2x per retry (Global Memory).
   - **Slow Decay**: Level decays by 0.05 per success to prevent rapid oscillation.
-  - **Visibility**: Popup displays exact pause duration.
-- **Popup UI**: "Full Bleed" card design using native Screener.in tokens (Inter, Purple).
-- **State Persistence**: Background script is the source of truth; Popup polls state on load.
-- **Pagination**: Since native "Industry" filtering isn't supported for "Upcoming Results", we use client-side iterative fetching ("scan next page") to find matches across pagination.
+  - **Visibility**: Popup displays### 3. Quarterly Analysis & Price Reactions
+- **Goal**: Provide immediate context on how the market reacted to earnings announcements.
+- **Reaction Logic**:
+    - **Reaction Date (T)**:
+        - If filing time is **<= 15:30 IST**: Reaction date is the **Filing Date**.
+        - If filing time is **> 15:30 IST**: Reaction date is the **Next Trading Day**.
+    - **Day Change**: `(Close Price on T - Close Price on T-1) / Close Price on T-1`
+    - **Next Day Change**: `(Close Price on T+1 - Close Price on T) / Close Price on T`
+    - **Next Week Change**: `(Close Price on T+5 - Close Price on T) / Close Price on T`
+- **Data Source**: Fetches historical close prices from NSE for targeted windows around each filing date.
+"Upcoming Results", we use client-side iterative fetching ("scan next page") to find matches across pagination.
 - **Staleness**: Database is considered valid for **84 days** (roughly one quarter).
 - **Multi-Level Search**: 
   - **Breadcrumb Extraction**: Parses the `<ul>` containing the "Industries" link to extract all 4 hierarchy levels.
@@ -39,5 +46,14 @@
 - **Ratios Dashboard**:
   - **Clean UI**: Removed custom ratio functionality to prevent layout drift and maintain a native "one-line" look.
   - **Native Aligned**: Used `baseline` and `center` alignment with `18px` font size to match Screener's native headers.
+  - **Column Alignment**: The first column (Ratio names / Earnings metrics) is explicitly left-aligned using `text-align: left` to match Screener's native table aesthetics.
   - **Adaptive CSS**: Switched from JS-computed styles to static CSS variables (`--sif-*`) for instant theme switching without reload.
   - **Data Preservation**: Implemented a "Read Phase" to scrape the original DOM table before it is modified, ensuring Screener's default ratios are never lost.
+  - **Silent Fetching**: Replaced visible DOM expansion with `DeepFetcher`, which asynchronously queries `/api/company/{id}/schedules/` to retrieve hidden granular metrics (e.g., Raw Material, Trade Payables) without impacting UI performance.
+  - **Normalization**: Uses lowercase key matching and robust text cleaning to handle variation in Screener's table layout and capitalization.
+  - **Analyst Standards**: 
+    - **Inventory Turnover**: Uses professional COGS logic (Raw Material + Change in Inv).
+    - **Inventory/Payable/Debtor Days**: Implemented standard turnover-to-days conversion for working capital analysis.
+    - **Dynamic Tax**: ROIC adjusts based on actual trailing tax rates.
+    - **Net Capex**: FCF now accounts for both asset purchases and sales to determine net cash outflow.
+- **Strategy Scoping**: `getMetrics` (for aggregate stats like Median/Avg) is intentionally restricted to `ListStrategy` (Latest Results) to maintain layout integrity on standard table-based pages.

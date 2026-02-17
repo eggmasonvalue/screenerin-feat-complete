@@ -3,22 +3,62 @@
 All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
+### Improved
+- **Professional Financial Ratios**: Upgraded the Ratios Dashboard to professional analyst standards:
+    - **Inventory Turnover**: Implemented accurate COGS logic using "Raw material cost" and "Change in inventory" (with fallback to Material % of Sales).
+    - **ROIC %**: Switched from a hardcoded 25% tax rate to a dynamic adjustment using the actual "Tax %" from the company's P&L.
+    - **Liquidity Ratios**: Enhanced accuracy by including "Loans n Advances" in Current/Quick assets and "Other liability items" in Current Liabilities.
+- **Deep Metric Extraction**: Implemented "Silent API Fetching" (`DeepFetcher`) to retrieve granular data:
+    - Bypasses UI expansion (clicking/scrolling) entirely.
+    - Directly queries Screener's internal API (`/api/company/{id}/schedules/`) for "Material Cost %", "Other Liabilities", "Other Assets", and "Cash from Investing Activity".
+    - Merges this high-fidelity data into the parser, ensuring ratios have access to hidden metrics like "Raw material cost" and "Trade Payables" without any visual glitching.
+- **Robust Parsing**:
+    - **Case-Insensitive Normalization**: All metric keys are now lowercased during parsing, eliminating bugs caused by Screener's inconsistent capitalization (e.g., "Trade Receivables" vs "Trade receivables").
+    - **Metric Aliasing**: Added support for standard aliases (e.g., "Equity Capital" mapping to "Share Capital" logic) to ensure calculations work across different company report formats.
+- **Enhanced Cash Flow Analysis**:
+    - **FCF Refinement**: Improved FCF logic to use "Net Capex" (Fixed assets purchased + Fixed assets sold).
+    - **New Metrics**: Added absolute "Free Cash Flow" to the dashboard and fixed "FCF Conversion" logic.
+- **Deep Efficiency Metrics**:
+    - Implemented full "Working Capital Cycle" logic including Debtor Days, Inventory Days, and Payable Days.
+    - Standardized "Screener Default" template to provide immediate coverage for core efficiency ratios.
+- **Robust Quarterly Analysis**:
+    - **Holiday/Weekend Handling**: Implemented "First Trading Day ON or AFTER" logic for price reactions. Corrects missing data for filings on non-trading days (e.g., Aug 15 Independence Day or Saturdays).
+    - **Revision Date Support**: Added fallback to `revised_Date` for filings where `broadcast_Date` is null (fixes missing Mar 2025 earnings date for RKSWAMY and similar cases).
+    - **Smart "After Market" Logic**: Filings reported after 15:30 IST automatically shift the reaction date to the next trading day (T+1), ensuring the "Earnings Reaction" reflects the first market session that could respond to the news.
+    - **UI Polish**: Renamed reaction columns to "Reaction", "Next Day", "Next Week" for better readability and removed the year from the "Earnings Day" display (e.g., "12 Feb" instead of "12-Feb-2024") to reduce clutter.
+    - **Targeted Event Fetching**: Replaced broad historical data fetching with targeted, window-specific queries (10 days before to 15 days after each earnings event). This eliminates data truncation issues caused by NSE API limits (which caps responses at ~70-100 records) and ensures accurate reaction calculations even for volatile stocks like TRACXN.
+    - **Strict Date Capping**: Implemented capping of price fetch ranges to the current date/yesterday, preventing 404 errors when a filing is very recent or the date buffer extends into the future.
+    - **Enhanced Date Parsing**: Improved robustness of filing date parsing to handle multiple formats (DD-MMM-YYYY and YYYY-MM-DD) and increased the historical lookback buffer to 20 days to ensure the "earliest" shown quarter allows for accurate price reaction calculations (fixing missing data for Reliance).
+    - **Data Key Normalization**: Added fallbacks for NSE's inconsistent data formats (e.g., using `broadCastDate` or `exchdisstime` when `filingDate` is missing for older quarters).
+    - **Backwards Anchor Search**: Improved price reaction accuracy by searching backwards for the most recent valid closing price (non-zero) to serve as the baseline anchor.
 
 ## [5.1.0] - 2026-02-16
 ### Added
 - **Company Ratios Re-implementation**: Successfully restored and refined the "Ratios" widget on company pages (`/company/*`).
 - **Templated Ratios**: New categorized views: "Efficiency", "Liquidity", "Solvency", and "Cash Flow".
 - **Instant Theme Adaptation**: The UI now uses native CSS variables (`--sif-bg`, `--sif-text`) for instant, refresh-free transitions between Light and Dark modes.
+- **Quarterly Analysis**: Added earnings dates and price reaction metrics (Day/Next Day/Week) to the "Quarters" section on company pages, fetched reliably via background script from NSE.
 
 ### Changed
+  - **Adaptive CSS**: Switched from JS-computed styles to static CSS variables (`--sif-*`) for instant theme switching without reload.
+  - **Data Preservation**: Implemented a "Read Phase" to scrape the original DOM table before it is modified, ensuring Screener's default ratios are never lost.
+  - **Silent Fetching**: Replaced clunky DOM expansion with `DeepFetcher` which queries the internal API for nested schedule data, providing a smoother user experience.
+  - **Normalization**: Uses lowercase key matching and robust text cleaning to handle variation in Screener's table layout and capitalization.
+  - **Analyst Standards**: 
+    - **Inventory Turnover**: Uses professional COGS logic (Raw Material + Change in Inv).
+    - **Inventory/Payable/Debtor Days**: Implemented standard turnover-to-days conversion for working capital analysis.
+    - **Dynamic Tax**: ROIC adjusts based on actual trailing tax rates.
+    - **Net Capex**: FCF now accounts for both asset purchases and sales to determine net cash outflow.
 - **Simplified UI**: Removed custom ratio functionality to ensure a cleaner, more native experience.
 - **Precise Alignment**: Refined the dropdown's positioning to be vertically centered/baseline-aligned with the "Ratios" header.
 - **Default Data Capture**: Implemented a "Read Phase" to capture Screener's original default ratios from the DOM before rendering custom templates, preventing data loss.
+- **Strategy Scoping**: `getMetrics` (for aggregate stats like Median/Avg) is intentionally restricted to `ListStrategy` (Latest Results) to maintain layout integrity on standard table-based pages.
 
 ### Fixed
 - **Dark Mode Dropdown**: Resolved an issue where the dropdown background remained white in dark mode.
 - **Zero-Value Ratios**: Fixed a bug where calculated ratios would show 0 if default values weren't captured correctly.
 - **UI Encroachment**: Fixed layout issues where text would overlap with dropdown arrows.
+- **Column Alignment**: Ensured the first column in Ratios and Quarterly Analysis tables is consistently left-aligned using explicit CSS.
 
 ## [5.0.0] - 2026-02-09
 ### Added

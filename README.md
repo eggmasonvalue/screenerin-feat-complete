@@ -33,7 +33,13 @@ A powerful Chrome Extension that adds high-impact features to India's most belov
 - **Smart Data Capture**: Preserves Screener's native default ratios by capturing them directly from the DOM.
 - **Seamless UI**: Vertically centered and baseline-aligned with the native header for a clean, integrated look.
 
-### 5. Seamless UI/UX
+### 5. Quarterly Analysis & Price Reactions
+- **Earnings History**: View exact results announcement dates directly in the "Quarters" table.
+- **Market Impact**: Instantly see price reactions (Day, Next Day, and Week) for each quarter.
+- **Holiday-Aware**: Robust logic handles announcements on market holidays and weekends by automatic shifting to the next trading day.
+- **Batch Optimized**: High-performance data fetching uses batching to ensure stability and accuracy across many years of history.
+
+### 6. Seamless UI/UX
 - **Dark Mode Support**: Adaptive UI that matches Screener.in's native Light and Dark themes instantly using CSS variables.
 - **Native Experience**: Clean integration, in line with screener's beloved UI/UX.
 

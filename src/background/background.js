@@ -28,21 +28,15 @@ async function fetchWithBackoff(url, retries = 3) {
             console.log(`Fetching: ${url} (Attempt ${i + 1})`);
             const response = await fetch(url);
 
+            if (response.status === 404) {
+                console.error(`Fetch 404 (Not Found) for ${url}. Not retrying.`);
+                throw new Error("HTTP 404");
+            }
+
             if (response.status === 429 || response.status === 403) {
                 rateLimitLevel++; // Increment global level
-
-                // Modified backoff: start at 5s, grow by double (2x) based on GLOBAL level
-                // Level 1: 5s, Level 2: 10s, Level 3: 20s
                 const backoffTime = 5000 * Math.pow(2, rateLimitLevel - 1);
-                const seconds = (backoffTime / 1000).toFixed(1);
-
-                console.warn(`Rate limit hit (${response.status}) on ${url}. Level: ${rateLimitLevel}. Pausing ${seconds}s...`);
-
-                // Visible Backoff
-                if (typeof updateState === 'function') {
-                    updateState({ details: `Rate limit hit (${response.status}).\nPausing for ${seconds}s...` });
-                }
-
+                console.warn(`Rate limit hit (${response.status}) on ${url}. Pausing ${(backoffTime / 1000).toFixed(1)}s...`);
                 await delay(backoffTime);
                 continue;
             }
@@ -57,12 +51,11 @@ async function fetchWithBackoff(url, retries = 3) {
             return await response.text();
 
         } catch (err) {
+            if (err.message === "HTTP 404") throw err; // Don't retry 404s
+
             console.error(`Fetch failed for ${url}: ${err.message}`);
             if (i === retries - 1) throw err;
 
-            if (typeof updateState === 'function') {
-                updateState({ details: `Request failed. Retrying (${i + 1}/${retries})...` });
-            }
             await delay(2000 * (i + 1));
         }
     }
@@ -314,6 +307,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     } else if (request.action === "fetchMarketCap") {
         fetchMarketCapFromPage(request.url)
             .then(mcap => sendResponse({ mcap }))
+            .catch(err => sendResponse({ error: err.message }));
+        return true; // Keep channel open
+    } else if (request.action === "fetchNSEData") {
+        fetchWithBackoff(request.url)
+            .then(text => {
+                try {
+                    const json = JSON.parse(text);
+                    sendResponse({ data: json });
+                } catch (e) {
+                    sendResponse({ error: "Failed to parse JSON" });
+                }
+            })
             .catch(err => sendResponse({ error: err.message }));
         return true; // Keep channel open
     }

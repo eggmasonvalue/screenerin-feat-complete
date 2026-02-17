@@ -1,13 +1,14 @@
 {
   "manifest_version": 3,
   "name": "Screener.in Industry Filter",
-  "version": "5.1.0",
+  "version": "5.1.2",
   "description": "Adds industry filtering to Screener.in results.",
   "permissions": [
     "storage"
   ],
   "host_permissions": [
-    "https://www.screener.in/*"
+    "https://www.screener.in/*",
+    "https://www.nseindia.com/*"
   ],
   "action": {
     "default_popup": "src/popup/popup.html",

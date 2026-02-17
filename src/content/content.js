@@ -1,16 +1,17 @@
 /**
  * Screener.in Filter Content Script
  * Handles UI injection and row filtering based on cached industry data.
- * v1.10.0: Layout Fix for Upcoming Results & Robust List Handling
+ * v5.1.0: Company Ratios Dashboard & Quarterly Analysis
  */
 
-console.log("Screener Content Script Active (v1.10.0)");
+console.log("Screener Content Script Active (v5.1.4-opt-year)");
 
 let stockMap = null;
 let industryHierarchy = null;
 let activeIndustry = "";
 let isFetchingAll = false;
 let currentFetchId = 0;
+let quarterlyData = null; // Stores NSE-derived quarterly metrics
 
 const DELAY_BETWEEN_PAGES = 300;
 
@@ -1039,20 +1040,23 @@ const CompanyStrategy = {
     init: async () => {
         console.log("Screener Filter: Company Strategy Active");
 
-        // Wait for Ratios section (max 5 seconds)
+        // Wait for Ratios section at the bottom (max 6 seconds)
         let retries = 0;
-        while (!document.querySelector('#ratios') && retries < 10) {
-            await new Promise(r => setTimeout(r, 500));
+        const getContainer = () => document.querySelector('section#ratios');
+
+        while ((!getContainer() || !getContainer().querySelector('table')) && retries < 15) {
+            await new Promise(r => setTimeout(r, 400));
             retries++;
         }
 
-        if (!document.querySelector('#ratios')) {
-            console.warn("Screener Filter: Ratios section not found after waiting.");
+        const container = getContainer();
+        if (!container) {
+            console.warn("Screener Filter: Ratios footer section (#ratios) not found.");
             return;
         }
 
-        // 0. Pre-expansion: Expand "Expenses" to get Material/Employee costs
-        await CompanyStrategy.expandExpenses();
+        // 0. Pre-fetch granular data silently (No UI expansion)
+        const deepData = await DeepFetcher.fetchAll();
 
         // 1. Data Parsing
         const financialData = DataParser.parseAll();
@@ -1061,22 +1065,64 @@ const CompanyStrategy = {
             return;
         }
 
+        // 1.5 Merge Deep Data
+        DataParser.mergeDeepData(financialData, deepData);
+
         // 2. Initialize UI
         RatioUI.init(financialData);
+
+        // 3. Quarterly Results Augmentation
+        await QuarterlyAnalysis.init();
+    }
+};
+
+const DeepFetcher = {
+    fetchAll: async () => {
+        try {
+            if (!window.Company || !window.Company.info) return {};
+
+            const companyId = window.Company.info.companyId;
+            const isConsolidated = window.Company.info.isConsolidated; // boolean
+
+            const targets = [
+                { parent: 'Material Cost %', section: 'profit-loss' },
+                { parent: 'Other Liabilities', section: 'balance-sheet' },
+                { parent: 'Other Assets', section: 'balance-sheet' },
+                { parent: 'Cash from Investing Activity', section: 'cash-flow' }
+            ];
+
+            const requests = targets.map(t => DeepFetcher.fetchSchedule(companyId, isConsolidated, t.parent, t.section));
+            const results = await Promise.all(requests);
+
+            // Merge all results into a single dictionary
+            const combined = {};
+            results.forEach(res => {
+                Object.assign(combined, res);
+            });
+            return combined;
+        } catch (e) {
+            console.error("Screener Filter: DeepFetch failed", e);
+            return {};
+        }
     },
 
-    expandExpenses: async () => {
-        const plTable = document.querySelector('#profit-loss table');
-        if (!plTable) return;
+    fetchSchedule: async (companyId, isConsolidated, parent, section) => {
+        try {
+            const params = new URLSearchParams({
+                parent: parent,
+                section: section
+            });
+            if (isConsolidated) params.append('consolidated', '');
 
-        // Find Expenses button
-        const buttons = Array.from(plTable.querySelectorAll('button.button-plain'));
-        const expBtn = buttons.find(b => b.innerText.includes('Expenses'));
+            const url = `/api/company/${companyId}/schedules/?${params.toString()}`;
+            const res = await fetch(url);
+            if (!res.ok) return {};
 
-        if (expBtn && expBtn.querySelector('span')?.innerText.includes('+')) {
-            expBtn.click();
-            // Wait a tiny bit for expansion (usually instant but good to be safe)
-            await new Promise(r => setTimeout(r, 50));
+            const json = await res.json();
+            // JSON format: { "Metric Name": { "Mar 2021": "123", ... }, ... }
+            return json;
+        } catch (e) {
+            return {};
         }
     }
 };
@@ -1122,8 +1168,12 @@ const DataParser = {
             const cells = row.querySelectorAll('td');
             if (cells.length < 2) return;
 
-            // Clean metric name: "Sales +", "Expenses +" -> "Sales", "Expenses"
-            let metricName = cells[0].innerText.trim().replace(/\s*[+\-]$/, '').trim();
+            // Clean metric name and lowercase for robust lookup
+            let metricName = cells[0].innerText.trim()
+                .replace(/\s*[+\-]$/, '') // Remove trailing + or -
+                .replace(/^[+\-\s]+/, '') // Remove leading symbols
+                .trim()
+                .toLowerCase();
 
             const values = [];
             for (let i = 1; i < cells.length; i++) {
@@ -1137,6 +1187,48 @@ const DataParser = {
         });
 
         return result;
+    },
+
+    mergeDeepData: (financialData, deepData) => {
+        if (!deepData || Object.keys(deepData).length === 0) return;
+
+        // Map existing years to indices
+        // financialData.years = ["Mar 2024", "Mar 2023", ...]
+        const yearMap = {};
+        financialData.years.forEach((y, i) => yearMap[y] = i);
+
+        // Iterate over deep metrics
+        // deepData = { "Raw material cost": { "Mar 2024": "100", ... }, ... }
+        for (const [metric, yearValues] of Object.entries(deepData)) {
+            const cleanKey = metric.trim().toLowerCase();
+
+            // Initialize array if not present (or overwrite if partial)
+            // We use the Profit Loss table logic (usually) or Balance Sheet logic
+            // Since we don't know the exact source table of the deep metric easily, 
+            // and RatioCalculator looks in pl/bs/cf, we can try to infer or just add to ALL contexts?
+            // Actually, RatioCalculator uses `get('pl', key)` etc.
+            // It's safer to add these deep metrics to a 'deep' source or inject into matching source.
+            // But simplify: Inject into 'pl' AND 'bs' AND 'cf' so lookups find it anywhere.
+            // It's a bit hacky but guarantees discovery.
+
+            const values = new Array(financialData.years.length).fill(null);
+
+            for (const [year, valStr] of Object.entries(yearValues)) {
+                if (yearMap.hasOwnProperty(year)) {
+                    const idx = yearMap[year];
+                    // Clean value: "12,345" -> 12345, "65%" -> 65
+                    let txt = valStr.toString().replace(/,/g, '');
+                    if (txt.includes('%')) txt = txt.replace('%', '');
+                    const val = parseFloat(txt);
+                    if (!isNaN(val)) values[idx] = val;
+                }
+            }
+
+            // Inject into all contexts because we don't track source in DeepFetcher
+            financialData.pl[cleanKey] = values;
+            financialData.bs[cleanKey] = values;
+            financialData.cf[cleanKey] = values;
+        }
     }
 };
 
@@ -1145,10 +1237,25 @@ const RatioCalculator = {
         const results = [];
         for (let i = 0; i < data.years.length; i++) {
             try {
-                // Helper to safely get value for year i
+                // Helper to safely get value for year i with case-insensitive and alias support
                 const get = (source, key) => {
-                    const row = data[source][key];
-                    return row ? row[i] : null;
+                    const row = data[source][key.toLowerCase()];
+                    if (row) return row[i];
+                    // Fallback Aliases
+                    const aliases = {
+                        'equity capital': 'share capital',
+                        'raw material cost': 'material cost %', // Fallback
+                        'change in inventory': 'change in stock', // Common alias
+                        'cash equivalents': 'cash & equivalents',
+                        'cash from operating activity': 'net cash flow from operating activities'
+                    };
+                    const aliasKey = aliases[key.toLowerCase()];
+                    if (aliasKey) {
+                        const aliasRow = data[source][aliasKey];
+                        return aliasRow ? aliasRow[i] : null;
+                    }
+
+                    return null;
                 };
 
                 // Context for formula
@@ -1158,7 +1265,7 @@ const RatioCalculator = {
                     cf: (key) => get('cf', key),
                     prev: (source, key) => {
                         if (i === 0) return null;
-                        const row = data[source][key];
+                        const row = data[source][key.toLowerCase()];
                         return row ? row[i - 1] : null;
                     }
                 };
@@ -1166,6 +1273,7 @@ const RatioCalculator = {
                 const val = ratioConfig.formula(ctx);
                 results.push(val);
             } catch (e) {
+                console.error(`Ratio Error [${ratioConfig.name}]:`, e);
                 results.push(null);
             }
         }
@@ -1173,50 +1281,110 @@ const RatioCalculator = {
     }
 };
 
-// Unit Helper
+// Unit Helper - Robust against null/NaN
 const U = {
-    pct: (val) => val !== null ? val.toFixed(2) + '%' : '-',
-    num: (val) => val !== null ? val.toFixed(2) : '-',
-    days: (val) => val !== null ? Math.round(val) + ' Days' : '-',
-    times: (val) => val !== null ? val.toFixed(2) + 'x' : '-'
+    pct: (val) => (val !== null && val !== undefined && !isNaN(val)) ? val.toFixed(2) + '%' : '-',
+    num: (val) => (val !== null && val !== undefined && !isNaN(val)) ? val.toFixed(2) : '-',
+    days: (val) => (val !== null && val !== undefined && !isNaN(val)) ? Math.round(val) + ' Days' : '-',
+    times: (val) => (val !== null && val !== undefined && !isNaN(val)) ? val.toFixed(2) + 'x' : '-'
 };
 
 const RatioTemplates = {
     'Screener Default': [
         // These will be populated from the existing table
         { name: 'ROCE %', unit: 'pct', formula: c => c.pl('ROCE %') || null },
-        { name: 'Debtor Days', unit: 'days', formula: c => null }, // Placeholder
-        { name: 'Inventory Days', unit: 'days', formula: c => null }, // Placeholder
-        { name: 'Days Payable', unit: 'days', formula: c => null }, // Placeholder
-        { name: 'Cash Conversion Cycle', unit: 'days', formula: c => null }, // Placeholder
-        { name: 'Working Capital Days', unit: 'days', formula: c => null } // Placeholder
+        {
+            name: 'Debtor Days', unit: 'days', formula: c => {
+                const sales = c.pl('Sales');
+                const rec = c.bs('Trade receivables');
+                const prevRec = c.prev('bs', 'Trade receivables');
+                const avgRec = prevRec ? (rec + prevRec) / 2 : rec;
+                return sales ? (avgRec / sales) * 365 : null;
+            }
+        },
+        {
+            name: 'Inventory Days', unit: 'days', formula: c => {
+                const rawMat = c.pl('Raw material cost');
+                const changeInv = c.pl('Change in inventory') || 0;
+                let cogs = null;
+                if (rawMat !== null) cogs = rawMat + changeInv;
+                else {
+                    const sales = c.pl('Sales');
+                    const matPct = c.pl('Material Cost %');
+                    if (sales !== null && matPct !== null) cogs = sales * (matPct / 100);
+                }
+                const inv = c.bs('Inventories');
+                const prevInv = c.prev('bs', 'Inventories');
+                const avgInv = prevInv ? (inv + prevInv) / 2 : inv;
+                return cogs ? (avgInv / cogs) * 365 : null;
+            }
+        },
+        {
+            name: 'Days Payable', unit: 'days', formula: c => {
+                const rawMat = c.pl('Raw material cost');
+                const changeInv = c.pl('Change in inventory') || 0;
+                let purchases = null;
+                if (rawMat !== null) purchases = rawMat + changeInv;
+
+                const payables = c.bs('Trade Payables');
+                const prevPayables = c.prev('bs', 'Trade Payables');
+                const avgPayables = prevPayables ? (payables + prevPayables) / 2 : payables;
+                return purchases ? (avgPayables / purchases) * 365 : null;
+            }
+        },
+        {
+            name: 'Working Capital Days', unit: 'days', formula: c => {
+                const dDays = RatioTemplates['Screener Default'].find(r => r.name === 'Debtor Days').formula(c);
+                const iDays = RatioTemplates['Screener Default'].find(r => r.name === 'Inventory Days').formula(c);
+                const pDays = RatioTemplates['Screener Default'].find(r => r.name === 'Days Payable').formula(c);
+                if (dDays === null || iDays === null || pDays === null) return null;
+                return dDays + iDays - pDays;
+            }
+        },
+        {
+            name: 'Cash Conversion Cycle', unit: 'days', formula: c => {
+                // CCC is essentially same as Working Capital Cycle for most non-financial firms
+                return RatioTemplates['Screener Default'].find(r => r.name === 'Working Capital Days').formula(c);
+            }
+        }
     ],
     'Efficiency': [
         {
             name: 'ROE %', unit: 'pct', formula: c => {
-                const equity = c.bs('Share Capital') + c.bs('Reserves');
-                const prevEquity = (c.prev('bs', 'Share Capital') || 0) + (c.prev('bs', 'Reserves') || 0);
+                const sub = (v) => v || 0;
+                const equity = sub(c.bs('Equity Capital')) + sub(c.bs('Reserves'));
+                const prevEquity = sub(c.prev('bs', 'Equity Capital')) + sub(c.prev('bs', 'Reserves'));
                 const avgEquity = prevEquity ? (equity + prevEquity) / 2 : equity;
-                return c.pl('Net Profit') / avgEquity * 100;
+                return avgEquity ? (c.pl('Net Profit') || 0) / avgEquity * 100 : null;
             }
         },
         {
             name: 'ROCE %', unit: 'pct', formula: c => {
-                const ebit = c.pl('Profit before tax') + (c.pl('Interest') || c.pl('Finance Costs') || 0);
-                const capitalEmployed = (c.bs('Share Capital') + c.bs('Reserves') + c.bs('Borrowings'));
-                const prevCap = (c.prev('bs', 'Share Capital') + c.prev('bs', 'Reserves') + c.prev('bs', 'Borrowings'));
+                const ebit = c.pl('Profit before tax') + (c.pl('Interest') || 0);
+                const capitalEmployed = (c.bs('Equity Capital') + c.bs('Reserves') + c.bs('Borrowings'));
+                const prevCap = (c.prev('bs', 'Equity Capital') + (c.prev('bs', 'Reserves') || 0) + (c.prev('bs', 'Borrowings') || 0));
                 const avgCap = prevCap ? (capitalEmployed + prevCap) / 2 : capitalEmployed;
                 return avgCap ? ebit / avgCap * 100 : null;
             }
         },
         {
             name: 'ROIC %', unit: 'pct', formula: c => {
-                // Approximate NOPAT = EBIT * (1 - 0.25) [Assume 25% tax rate as safe default]
-                const ebit = c.pl('Profit before tax') + (c.pl('Interest') || c.pl('Finance Costs') || 0);
-                const nopat = ebit * 0.75;
+                const ebit = c.pl('Profit before tax') + (c.pl('Interest') || 0);
+                const taxRate = (c.pl('Tax %') || 25) / 100;
+                const nopat = ebit * (1 - taxRate);
 
-                const investedCapital = (c.bs('Share Capital') + c.bs('Reserves') + c.bs('Borrowings')) - (c.bs('Cash Equivalents') || 0);
-                const prevIC = (c.prev('bs', 'Share Capital') + c.prev('bs', 'Reserves') + c.prev('bs', 'Borrowings')) - (c.prev('bs', 'Cash Equivalents') || 0);
+                // Invested Capital = (Total Assets - Current Liabilities) - Cash - Investments
+                // Approximation: (Equity + Reserves + Borrowings) - Cash - Investments
+                const sub = (val) => val || 0;
+
+                const calcIC = (ctxFn) => {
+                    const capital = sub(ctxFn('bs', 'Equity Capital')) + sub(ctxFn('bs', 'Reserves')) + sub(ctxFn('bs', 'Borrowings'));
+                    const deductions = sub(ctxFn('bs', 'Cash Equivalents')) + sub(ctxFn('bs', 'Investments'));
+                    return capital - deductions;
+                };
+
+                const investedCapital = calcIC((s, k) => c[s](k));
+                const prevIC = calcIC((s, k) => c.prev(s, k));
 
                 const avgIC = prevIC ? (investedCapital + prevIC) / 2 : investedCapital;
                 return avgIC ? nopat / avgIC * 100 : null;
@@ -1224,11 +1392,28 @@ const RatioTemplates = {
         },
         {
             name: 'Inventory Turnover', unit: 'times', formula: c => {
-                const sales = c.pl('Sales');
+                // Professional Analyst COGS Calculation
+                // 1. Try to get explicit 'Raw material cost' + 'Change in inventory' (from DeepFetch)
+                const rawMat = c.pl('Raw material cost');
+                const changeInv = c.pl('Change in inventory'); // From DeepFetch of Material Cost %
+
+                let cogs = null;
+                if (rawMat !== null) {
+                    // Check if changeInv exists, else assume 0
+                    cogs = rawMat + (changeInv || 0);
+                } else {
+                    // Fallback to Material % of Sales
+                    const sales = c.pl('Sales');
+                    const matPct = c.pl('Material Cost %');
+                    if (sales !== null && matPct !== null) {
+                        cogs = sales * (matPct / 100);
+                    }
+                }
+
                 const inv = c.bs('Inventories');
                 const prevInv = c.prev('bs', 'Inventories');
                 const avgInv = prevInv ? (inv + prevInv) / 2 : inv;
-                return avgInv ? sales / avgInv : null;
+                return avgInv && cogs !== null ? cogs / avgInv : null;
             }
         },
         {
@@ -1243,32 +1428,89 @@ const RatioTemplates = {
         {
             name: 'Debtor Days', unit: 'days', formula: c => {
                 const sales = c.pl('Sales');
-                const rec = c.bs('Trade Receivables');
-                const prevRec = c.prev('bs', 'Trade Receivables');
+                const rec = c.bs('Trade receivables');
+                const prevRec = c.prev('bs', 'Trade receivables');
                 const avgRec = prevRec ? (rec + prevRec) / 2 : rec;
                 return sales ? (avgRec / sales) * 365 : null;
+            }
+        },
+        {
+            name: 'Inventory Days', unit: 'days', formula: c => {
+                const rawMat = c.pl('Raw material cost');
+                const changeInv = c.pl('Change in inventory') || 0;
+                let cogs = null;
+                if (rawMat !== null) cogs = rawMat + changeInv;
+                else {
+                    const sales = c.pl('Sales');
+                    const matPct = c.pl('Material Cost %');
+                    if (sales !== null && matPct !== null) cogs = sales * (matPct / 100);
+                }
+                const inv = c.bs('Inventories');
+                const prevInv = c.prev('bs', 'Inventories');
+                const avgInv = prevInv ? (inv + prevInv) / 2 : inv;
+                return cogs ? (avgInv / cogs) * 365 : null;
+            }
+        },
+        {
+            name: 'Days Payable', unit: 'days', formula: c => {
+                const rawMat = c.pl('Raw material cost');
+                const changeInv = c.pl('Change in inventory') || 0;
+                let purchases = null;
+                if (rawMat !== null) purchases = rawMat + changeInv;
+
+                const payables = c.bs('Trade Payables');
+                const prevPayables = c.prev('bs', 'Trade Payables');
+                const avgPayables = prevPayables ? (payables + prevPayables) / 2 : payables;
+                return purchases ? (avgPayables / purchases) * 365 : null;
+            }
+        },
+        {
+            name: 'Working Capital Days', unit: 'days', formula: c => {
+                // Ensure RatioTemplates is fully defined/accessible via deferred execution or direct lookups
+                // Since this runs later, it should be fine.
+                const findRatio = (name) => {
+                    // Search all categories
+                    for (const cat in RatioTemplates) {
+                        const r = RatioTemplates[cat].find(x => x.name === name);
+                        if (r) return r;
+                    }
+                    return null;
+                };
+
+                const d = findRatio('Debtor Days');
+                const i = findRatio('Inventory Days');
+                const p = findRatio('Days Payable');
+
+                if (!d || !i || !p) return null;
+
+                const dDays = d.formula(c);
+                const iDays = i.formula(c);
+                const pDays = p.formula(c);
+
+                if (dDays === null || iDays === null || pDays === null) return null;
+                return dDays + iDays - pDays;
             }
         }
     ],
     'Liquidity': [
         {
             name: 'Current Ratio', unit: 'times', formula: c => {
-                const currAssets = (c.bs('Inventories') || 0) + (c.bs('Trade Receivables') || 0) + (c.bs('Cash Equivalents') || 0) + (c.bs('Other Assets') || 0);
-                const currLiab = (c.bs('Trade Payables') || 0) + (c.bs('Other Liabilities') || 0);
+                const currAssets = (c.bs('Inventories') || 0) + (c.bs('Trade receivables') || 0) + (c.bs('Cash Equivalents') || 0) + (c.bs('Loans n Advances') || 0);
+                const currLiab = (c.bs('Trade Payables') || 0) + (c.bs('Other liability items') || 0);
                 return currLiab ? currAssets / currLiab : null;
             }
         },
         {
             name: 'Quick Ratio', unit: 'times', formula: c => {
-                const quickAssets = (c.bs('Trade Receivables') || 0) + (c.bs('Cash Equivalents') || 0) + (c.bs('Other Assets') || 0);
-                const currLiab = (c.bs('Trade Payables') || 0) + (c.bs('Other Liabilities') || 0);
+                const quickAssets = (c.bs('Trade receivables') || 0) + (c.bs('Cash Equivalents') || 0) + (c.bs('Loans n Advances') || 0);
+                const currLiab = (c.bs('Trade Payables') || 0) + (c.bs('Other liability items') || 0);
                 return currLiab ? quickAssets / currLiab : null;
             }
         },
         {
             name: 'Cash Ratio', unit: 'times', formula: c => {
                 const cash = c.bs('Cash Equivalents') || 0;
-                const currLiab = (c.bs('Trade Payables') || 0) + (c.bs('Other Liabilities') || 0);
+                const currLiab = (c.bs('Trade Payables') || 0) + (c.bs('Other liability items') || 0);
                 return currLiab ? cash / currLiab : null;
             }
         }
@@ -1277,7 +1519,7 @@ const RatioTemplates = {
         {
             name: 'Debt to Equity', unit: 'times', formula: c => {
                 const debt = c.bs('Borrowings');
-                const equity = (c.bs('Share Capital') || 0) + (c.bs('Reserves') || 0);
+                const equity = (c.bs('Equity Capital') || 0) + (c.bs('Reserves') || 0);
                 return equity ? debt / equity : null;
             }
         },
@@ -1291,16 +1533,14 @@ const RatioTemplates = {
         {
             name: 'Debt to Assets', unit: 'times', formula: c => {
                 const debt = c.bs('Borrowings');
-                const assets = (c.bs('Fixed Assets') || 0) + (c.bs('CWIP') || 0) + (c.bs('Investments') || 0) + (c.bs('Other Assets') || 0) +
-                    (c.bs('Inventories') || 0) + (c.bs('Trade Receivables') || 0) + (c.bs('Cash Equivalents') || 0);
+                const assets = c.bs('Total Assets');
                 return assets ? debt / assets : null;
             }
         },
         {
             name: 'Financial Leverage', unit: 'times', formula: c => {
-                const assets = (c.bs('Fixed Assets') || 0) + (c.bs('CWIP') || 0) + (c.bs('Investments') || 0) + (c.bs('Other Assets') || 0) +
-                    (c.bs('Inventories') || 0) + (c.bs('Trade Receivables') || 0) + (c.bs('Cash Equivalents') || 0);
-                const equity = (c.bs('Share Capital') || 0) + (c.bs('Reserves') || 0);
+                const assets = c.bs('Total Assets');
+                const equity = (c.bs('Equity Capital') || 0) + (c.bs('Reserves') || 0);
                 return equity ? assets / equity : null;
             }
         }
@@ -1323,10 +1563,19 @@ const RatioTemplates = {
         {
             name: 'FCF Conversion', formula: c => {
                 const cfo = c.cf('Cash from Operating Activity');
-                const capex = Math.abs(c.cf('Fixed assets purchased') || 0);
-                const fcf = cfo - capex;
+                // Capex is Net Capex = Fixed assets purchased (outflow) + Fixed assets sold (inflow)
+                const capex = (c.cf('Fixed assets purchased') || 0) + (c.cf('Fixed assets sold') || 0);
+                const fcf = cfo + capex;
                 const pat = c.pl('Net Profit');
                 return pat ? fcf / pat * 100 : null;
+            }
+        },
+        {
+            name: 'Free Cash Flow', formula: c => {
+                const cfo = c.cf('Cash from Operating Activity');
+                // Capex is Net Capex = Fixed assets purchased (outflow) + Fixed assets sold (inflow)
+                const capex = (c.cf('Fixed assets purchased') || 0) + (c.cf('Fixed assets sold') || 0);
+                return (cfo !== null) ? cfo + capex : null;
             }
         }
     ]
@@ -1334,196 +1583,496 @@ const RatioTemplates = {
 
 const RatioUI = {
     state: {
-        template: 'Screener Default' // Set default to 'Screener Default'
+        template: 'Screener Default',
+        nativeHTML: null
     },
     data: null,
-    defaultRatiosMap: {}, // To store pre-calculated values
 
     init: (data) => {
         RatioUI.data = data;
-        const container = document.querySelector('#ratios');
+        const container = document.querySelector('section#ratios');
         if (!container) return;
 
-        if (!container) return;
-
-        // Inject dynamic styles based on current theme
-        RatioUI.injectStyles(container);
-
-        // 1. Capture Existing Default Ratios (Read Phase)
-        // We do this BEFORE modifying the DOM to ensure we capture the original values.
-        RatioUI.captureDefaultRatios(container);
-
-        // Restore Header & Structure
-        let header = container.querySelector('h2');
-        if (!header) {
-            header = document.createElement('h2');
-            header.innerText = 'Ratios';
-            container.prepend(header);
-        } else {
-            header.innerText = 'Ratios';
+        // 1. Capture Native state (excluding our controls)
+        if (!RatioUI.state.nativeHTML) {
+            const clone = container.cloneNode(true);
+            const controls = clone.querySelector('#sif-ratio-controls');
+            if (controls) controls.remove();
+            RatioUI.state.nativeHTML = clone.innerHTML;
         }
 
-        // Add Flex container for Header + Controls if not present
-        if (!header.parentElement.classList.contains('flex-row')) {
-            const headerRow = document.createElement('div');
-            headerRow.className = 'flex-row';
-            headerRow.style.alignItems = 'baseline'; // Baseline for proper text alignment
-            headerRow.style.marginBottom = '16px';
+        // Inject dynamic styles
+        RatioUI.injectStyles();
 
-            // Allow header to sit naturally
-            header.style.marginBottom = '0';
-            header.style.marginRight = '8px';
-            header.style.lineHeight = '1'; // Ensure line-height doesn't shift baseline
+        // Render controls
+        RatioUI.renderControls(container);
 
-            // Move header into row
-            header.parentElement.insertBefore(headerRow, header);
-            headerRow.appendChild(header);
-
-            // Container for controls - positioned immediately after header
-            const controlsContainer = document.createElement('div');
-            controlsContainer.id = 'ratio-controls';
-            // No margin needed if header has margin-right
-            headerRow.appendChild(controlsContainer);
-        }
-
-        // Remove old content (Table) but keep the new header structure
-        const oldTable = container.querySelector('.responsive-holder');
-        if (oldTable) oldTable.remove();
-
-        // 2. Table Container
-        const tableResponsive = document.createElement('div');
-        tableResponsive.className = 'responsive-holder fill-card-width';
-
-        const table = document.createElement('table');
-        table.className = 'data-table';
-        table.innerHTML = `
-            <thead>
-                <tr>
-                    <th class="text-left">Ratio</th>
-                    ${data.years.map(y => `<th>${y}</th>`).join('')} 
-                </tr>
-            </thead>
-            <tbody id="ratio-table-body"></tbody>
-        `;
-
-        tableResponsive.appendChild(table);
-        container.appendChild(tableResponsive);
-
-
-
-        // Initialize State
-        // Ensure 'Screener Default' is always the starting template
-
-        RatioUI.state.template = 'Screener Default';
-
-        // Initial Render
-        RatioUI.renderControls();
-        RatioUI.renderTable();
+        // Render table
+        RatioUI.renderTable(container);
     },
 
-    captureDefaultRatios: (container) => {
-        // Scrape the existing table to populate defaultRatiosMap
-        const table = container.querySelector('table');
-        if (!table) return;
-
-        const rows = Array.from(table.querySelectorAll('tbody tr'));
-        rows.forEach(row => {
-            const cells = row.querySelectorAll('td');
-            if (cells.length < 2) return;
-
-            const name = cells[0].innerText.trim();
-            const values = [];
-            for (let i = 1; i < cells.length; i++) {
-                values.push(cells[i].innerText.trim()); // Keep as string to preserve exact formatting
-            }
-            RatioUI.defaultRatiosMap[name] = values;
-        });
-    },
-
-    renderControls: () => {
-        const controls = document.querySelector('#ratio-controls');
-        if (!controls) return;
-
-        const templates = Object.keys(RatioTemplates);
-
-        controls.innerHTML = `
-            <select id="ratio-template-select" class="ratio-select">
-                ${templates.map(t => `<option value="${t}" ${RatioUI.state.template === t ? 'selected' : ''}>${t}</option>`).join('')}
-            </select>
-        `;
-
-        // Bind Control Events
-        const tmplSelect = controls.querySelector('#ratio-template-select');
-        tmplSelect.addEventListener('change', (e) => {
-            RatioUI.setTemplate(e.target.value);
-        });
-    },
-
-    renderTable: () => {
-        const tbody = document.querySelector('#ratio-table-body');
-        if (!tbody) return;
-
-        const ratios = RatioTemplates[RatioUI.state.template];
-
-        tbody.innerHTML = ratios.map((r) => {
-            let values;
-
-            // Use captured default values if available
-            if (RatioUI.defaultRatiosMap[r.name]) {
-                values = RatioUI.defaultRatiosMap[r.name];
-            } else {
-                const rawValues = RatioCalculator.calculate(RatioUI.data, r);
-                const fmt = r.unit && U[r.unit] ? U[r.unit] : U.num;
-                values = rawValues.map(v => fmt(v));
-            }
-
-            return `
-                <tr>
-                    <td class="text-left" style="font-weight: 500;">${r.name}</td>
-                    ${values.map(v => `<td>${v}</td>`).join('')}
-                </tr>
-            `;
-        }).join('');
-    },
-
-    setTemplate: (name) => {
-        RatioUI.state.template = name;
-        RatioUI.renderTable();
-        RatioUI.renderControls();
-    },
-
-    injectStyles: (container) => {
-        if (document.getElementById('ratio-dynamic-styles')) return;
-
+    injectStyles: () => {
+        if (document.getElementById('sif-styles')) return;
         const style = document.createElement('style');
-        style.id = 'ratio-dynamic-styles';
+        style.id = 'sif-styles';
         style.textContent = `
-            .ratio-select {
-                font-size: inherit; 
-                font-family: inherit; 
-                font-weight: 500; 
-                color: var(--sif-text, inherit); 
-                border: none; 
-                background-color: transparent;
-                background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="gray" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>');
-                background-repeat: no-repeat;
-                background-position: right center;
-                padding-right: 20px;
-                padding-left: 4px;
-                cursor: pointer; 
-                outline: none;
-                margin: 0;
-                appearance: none;
-                -webkit-appearance: none;
+            .sif-dropdown {
+                font-size: 14px;
+                border: 1px solid var(--border-color, #e0e0e0);
+                border-radius: 4px;
+                padding: 4px 8px;
+                background: var(--ink-normal, #fff);
+                color: var(--ink-900, #333);
+                cursor: pointer;
+                margin-left: 12px;
+                vertical-align: middle;
             }
-            .ratio-select option {
-                background-color: var(--sif-bg, #fff);
-                color: var(--sif-text, #333);
+            #sif-ratio-controls {
+                margin: 10px 0;
+                padding: 8px;
+                background: var(--bg-card, #f9f9f9);
+                border: 1px solid var(--border-color, #eee);
+                border-radius: 4px;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
             }
         `;
         document.head.appendChild(style);
+    },
+
+    renderControls: (container) => {
+        if (document.getElementById('sif-ratio-controls')) return;
+
+        const wrapper = document.createElement('div');
+        wrapper.id = 'sif-ratio-controls';
+
+        const label = document.createElement('span');
+        label.innerHTML = '<strong>Analysis Template:</strong>';
+        label.style.fontSize = '13px';
+        wrapper.appendChild(label);
+
+        const select = document.createElement('select');
+        select.className = 'sif-dropdown';
+        select.style.flex = '1';
+        select.style.marginLeft = '10px';
+
+        Object.keys(RatioTemplates).forEach(key => {
+            const opt = document.createElement('option');
+            opt.value = key;
+            opt.innerText = key;
+            if (key === RatioUI.state.template) opt.selected = true;
+            select.appendChild(opt);
+        });
+
+        select.onchange = (e) => {
+            RatioUI.state.template = e.target.value;
+            RatioUI.renderTable(container);
+        };
+        wrapper.appendChild(select);
+
+        // Insert before the table or at top of section
+        const table = container.querySelector('table');
+        if (table) {
+            container.insertBefore(wrapper, table);
+        } else {
+            container.appendChild(wrapper);
+        }
+    },
+
+    renderTable: (container) => {
+        // 1. Reset to native state
+        if (RatioUI.state.nativeHTML) {
+            const controls = container.querySelector('#sif-ratio-controls');
+            container.innerHTML = RatioUI.state.nativeHTML;
+            if (controls) container.prepend(controls);
+        }
+
+        if (RatioUI.state.template === 'Screener Default') return;
+
+        // 2. Build Custom Table
+        const template = RatioTemplates[RatioUI.state.template];
+        if (!template) return;
+
+        const table = document.createElement('table');
+        table.className = 'data-table'; // Screener native table class
+
+        // Headers
+        const thead = document.createElement('thead');
+        const headerRow = document.createElement('tr');
+        headerRow.innerHTML = `<th class="text-left">Attributes</th>` +
+            RatioUI.data.years.map(y => `<th>${y}</th>`).join('');
+        thead.appendChild(headerRow);
+        table.appendChild(thead);
+
+        // Body
+        const tbody = document.createElement('tbody');
+        template.forEach(r => {
+            try {
+                const values = RatioCalculator.calculate(RatioUI.data, r);
+                const tr = document.createElement('tr');
+                const fmt = U[r.unit] || U.num;
+
+                tr.innerHTML = `<td class="text-left" style="font-weight: 500;">${r.name}</td>` +
+                    values.map(v => `<td>${fmt(v)}</td>`).join('');
+                tbody.appendChild(tr);
+            } catch (e) {
+                console.error(`Ratio Render Error [${r.name}]:`, e);
+            }
+        });
+        table.appendChild(tbody);
+
+        // Replace original table
+        const oldTable = container.querySelector('table');
+        if (oldTable) oldTable.replaceWith(table);
+        else container.appendChild(table);
     }
 };
+
+window.RatioUI = RatioUI; // For debugging
+
+const QuarterlyAnalysis = {
+    init: async () => {
+        const quartSection = document.querySelector('#quarters');
+        if (!quartSection) return;
+
+        const symbol = window.location.pathname.split('/')[2].toUpperCase();
+        if (!symbol) return;
+
+        try {
+            // 1. Fetch from BOTH legacy and integrated endpoints
+            const legacyUrl = `https://www.nseindia.com/api/corporates-financial-results?index=equities&symbol=${symbol}&period=Quarterly`;
+            const integratedUrl = `https://www.nseindia.com/api/integrated-filing-results?index=equities&symbol=${symbol}&period_ended=all&type=Integrated%20Filing-%20Financials`;
+
+            const [legacyData, integratedData] = await Promise.all([
+                new Promise(resolve => chrome.runtime.sendMessage({ action: "fetchNSEData", url: legacyUrl }, res => resolve(res?.data || []))),
+                new Promise(resolve => chrome.runtime.sendMessage({ action: "fetchNSEData", url: integratedUrl }, res => resolve(res?.data?.data || [])))
+            ]);
+
+            // 2. Normalize into common format: {toDate, filingDate, consolidated}
+            // 2. Normalize into common format: {toDate, filingDate, consolidated}
+            const normalizedLegacy = (legacyData || []).map(r => ({
+                toDate: r.toDate || r.reportingPeriod,
+                filingDate: r.filingDate || r.broadCastDate || r.exchdisstime, // Fallback for old results
+                consolidated: r.consolidated
+            }));
+
+            const normalizedIntegrated = (integratedData || []).map(r => ({
+                toDate: r.qe_Date,
+                filingDate: r.broadcast_Date || r.revised_Date, // Fallback for Revised filings (e.g. RKSWAMY Mar 2025)
+                consolidated: (r.consolidated === "Standalone" || r.consolidated === "Standalone-NR") ? "Non-Consolidated" : r.consolidated
+            }));
+
+            const mergedData = [...normalizedIntegrated, ...normalizedLegacy];
+            if (mergedData.length === 0) {
+                console.log(`QuarterlyAnalysis [${symbol}]: No filing data found from NSE.`);
+                return;
+            }
+
+            console.log(`QuarterlyAnalysis [${symbol}]: Starting augmentation with ${mergedData.length} records.`);
+            console.log("Screener Content Script Active (v5.1.7-fix-missing-date)");
+            await QuarterlyAnalysis.augmentTable(quartSection, symbol, mergedData);
+        } catch (e) {
+            console.error(`QuarterlyAnalysis [${symbol}]: Initialization failed`, e);
+        }
+    },
+
+    augmentTable: async (section, symbol, nseResults) => {
+        const table = section.querySelector('table');
+        if (!table) return;
+
+        const headers = Array.from(table.querySelectorAll('thead th')).slice(1);
+        const periods = headers.map(th => th.innerText.trim());
+
+        // Initialize rows
+        const earningsDateRow = { name: 'Earnings Day', values: periods.map(() => '-') };
+        const dayReactionRow = { name: 'Reaction', values: periods.map(() => '-') };
+        const nextDayRow = { name: 'Next Day', values: periods.map(() => '-') };
+        const nextWeekRow = { name: 'Next Week', values: periods.map(() => '-') };
+
+        const monthMap = { 'JAN': 0, 'FEB': 1, 'MAR': 2, 'APR': 3, 'MAY': 4, 'JUN': 5, 'JUL': 6, 'AUG': 7, 'SEP': 8, 'OCT': 9, 'NOV': 10, 'DEC': 11 };
+
+        // 1. Map columns to matches and identify date range for batch price fetch
+        const columnData = [];
+        let minFilingDate = null;
+        let maxFilingDate = null;
+
+        for (let i = 0; i < periods.length; i++) {
+            const period = periods[i];
+            const scrDate = new Date(period);
+
+            const periodMatches = nseResults.filter(r => {
+                const nsePeriod = r.toDate;
+                if (!nsePeriod) return false;
+                const nseDate = new Date(nsePeriod);
+                return nseDate.getMonth() === scrDate.getMonth() && nseDate.getFullYear() === scrDate.getFullYear();
+            });
+
+            if (periodMatches.length === 0) {
+                columnData[i] = null;
+                continue;
+            }
+
+            const match = periodMatches.find(r => r.consolidated === "Consolidated") || periodMatches[0];
+            columnData[i] = match;
+
+            if (match.filingDate) {
+                const datePart = match.filingDate.split(' ')[0];
+                const parts = datePart.split('-');
+                const d = new Date(parseInt(parts[2]), monthMap[parts[1].toUpperCase()], parseInt(parts[0]));
+                if (!isNaN(d.getTime())) {
+                    if (!minFilingDate || d < minFilingDate) minFilingDate = d;
+                    if (!maxFilingDate || d > maxFilingDate) maxFilingDate = d;
+                }
+            }
+        }
+
+        // 2. Fetch prices for specific filing windows (Targeted Fetching)
+        let allPrices = [];
+        const uniqueFilingDates = new Set();
+        columnData.forEach(m => {
+            if (m && m.filingDate) uniqueFilingDates.add(m.filingDate.split(' ')[0]);
+        });
+
+        if (uniqueFilingDates.size > 0) {
+            console.log(`QuarterlyAnalysis [${symbol}]: Starting targeted fetch for ${uniqueFilingDates.size} events.`);
+            console.log("Screener Content Script Active (v5.1.8-ui-polish)");
+
+            const formatDate = (d) => `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}`;
+            const yesterdayEnd = new Date();
+            yesterdayEnd.setHours(0, 0, 0, 0);
+            const endRangeLimit = yesterdayEnd.getTime() - 1;
+
+            const fetchPromises = Array.from(uniqueFilingDates).map(async (dateStr) => {
+                // Parse date (DD-MMM-YYYY or YYYY-MM-DD handled by Date constructor usually, but manual parse is safer if mixed)
+                // Reuse parseDate logic logic akin to calculateReactionFromPrices or simple Date if format is known clean
+                // The normalized format from step 1 is likely "DD-MM-YYYY" or "YYYY-MM-DD" depending on source.
+                // Let's use a robust parser here or trust the existing flow.
+                // Step 1 produced normalizedLegacy/Integrated which has toDate/filingDate.
+                // columnData has match.filingDate.
+
+                let filingDate = new Date(dateStr); // Try standard parse first
+                if (isNaN(filingDate.getTime())) {
+                    // Fallback for DD-MMM-YYYY
+                    const parts = dateStr.split('-');
+                    const months = { 'JAN': 0, 'FEB': 1, 'MAR': 2, 'APR': 3, 'MAY': 4, 'JUN': 5, 'JUL': 6, 'AUG': 7, 'SEP': 8, 'OCT': 9, 'NOV': 10, 'DEC': 11 };
+                    if (months[parts[1].toUpperCase()] !== undefined) {
+                        filingDate = new Date(parseInt(parts[2]), months[parts[1].toUpperCase()], parseInt(parts[0]));
+                    }
+                }
+
+                if (isNaN(filingDate.getTime())) return [];
+
+                // Window: -10 days to +15 days
+                const start = new Date(filingDate);
+                start.setDate(start.getDate() - 10);
+
+                let end = new Date(filingDate);
+                end.setDate(end.getDate() + 15);
+
+                if (end.getTime() > endRangeLimit) end = new Date(endRangeLimit);
+                if (start.getTime() > end.getTime()) return []; // Start is in future?
+
+                const url = `https://www.nseindia.com/api/NextApi/apiClient/GetQuoteApi?functionName=getHistoricalTradeData&symbol=${symbol}&series=EQ&fromDate=${formatDate(start)}&toDate=${formatDate(end)}`;
+
+                try {
+                    const res = await new Promise(resolve => chrome.runtime.sendMessage({ action: "fetchNSEData", url: url }, resolve));
+                    if (res?.error) {
+                        console.warn(`QuarterlyAnalysis [${symbol}]: Fetch failed for window ${formatDate(start)}: ${res.error}`);
+                        return [];
+                    }
+                    return res?.data?.data || (Array.isArray(res?.data) ? res.data : []) || [];
+                } catch (e) {
+                    console.error(`QuarterlyAnalysis [${symbol}]: Error fetching window ${formatDate(start)}`, e);
+                    return [];
+                }
+            });
+
+            const results = await Promise.all(fetchPromises);
+            results.forEach(chunk => {
+                if (Array.isArray(chunk)) allPrices = allPrices.concat(chunk);
+            });
+
+            // Deduplicate and sort
+            allPrices = Array.from(new Map(allPrices.map(p => [p.mtimestamp, p])).values());
+            allPrices.sort((a, b) => {
+                const d1 = a.mtimestamp.split('-');
+                const d2 = b.mtimestamp.split('-');
+                const m1 = { 'JAN': 0, 'FEB': 1, 'MAR': 2, 'APR': 3, 'MAY': 4, 'JUN': 5, 'JUL': 6, 'AUG': 7, 'SEP': 8, 'OCT': 9, 'NOV': 10, 'DEC': 11 }[d1[1].toUpperCase()];
+                const m2 = { 'JAN': 0, 'FEB': 1, 'MAR': 2, 'APR': 3, 'MAY': 4, 'JUN': 5, 'JUL': 6, 'AUG': 7, 'SEP': 8, 'OCT': 9, 'NOV': 10, 'DEC': 11 }[d2[1].toUpperCase()];
+                return new Date(parseInt(d1[2]), m1, parseInt(d1[0])) -
+                    new Date(parseInt(d2[2]), m2, parseInt(d2[0]));
+            });
+
+            console.log(`QuarterlyAnalysis [${symbol}]: Targeted fetch complete. ${allPrices.length} records.`);
+        }
+
+        // 3. Process each column using pre-fetched prices
+        for (let i = 0; i < columnData.length; i++) {
+            const match = columnData[i];
+            if (match && match.filingDate) {
+                const cleanFilingDate = match.filingDate.split(' ')[0];
+                // Format: DD MMM (e.g., 12 Feb) - Remove Year
+                const parts = cleanFilingDate.split('-');
+                const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                let formattedDate = cleanFilingDate;
+
+                // Parse DD-MMM-YYYY or YYYY-MM-DD
+                if (parts.length === 3) {
+                    if (parts[0].length === 4) {
+                        // YYYY-MM-DD
+                        const mIndex = parseInt(parts[1]) - 1;
+                        formattedDate = `${parts[2]} ${monthNames[mIndex]}`;
+                    } else {
+                        // DD-MMM-YYYY
+                        const titleCaseMonth = parts[1].charAt(0).toUpperCase() + parts[1].slice(1).toLowerCase();
+                        formattedDate = `${parts[0]} ${titleCaseMonth}`;
+                    }
+                }
+
+                earningsDateRow.values[i] = formattedDate;
+
+                const reactions = await QuarterlyAnalysis.calculateReactionFromPrices(symbol, match.filingDate, allPrices);
+                if (reactions) {
+                    dayReactionRow.values[i] = reactions.day;
+                    nextDayRow.values[i] = reactions.nextDay;
+                    nextWeekRow.values[i] = reactions.nextWeek;
+                } else {
+                    dayReactionRow.values[i] = `<span title="Could not find enough price data to calculate anchor for ${match.filingDate}">-</span>`;
+                }
+            }
+        }
+
+        // Inject rows before "Raw PDF" row
+        const tbody = table.querySelector('tbody');
+        const rows = Array.from(tbody.querySelectorAll('tr'));
+        const pdfRow = rows.find(r => r.innerText.includes('Raw PDF'));
+
+        [earningsDateRow, dayReactionRow, nextDayRow, nextWeekRow].forEach(rowData => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td style="text-align: left; font-weight: 500;">${rowData.name}</td>
+                ${rowData.values.map(v => `<td>${v}</td>`).join('')}
+            `;
+            if (pdfRow) {
+                tbody.insertBefore(tr, pdfRow);
+            } else {
+                tbody.appendChild(tr);
+            }
+        });
+    },
+
+    calculateReactionFromPrices: async (symbol, fullFilingDate, prices) => {
+        try {
+            if (!prices || prices.length < 2) return null;
+
+            const parseDate = (dateStr) => {
+                if (!dateStr) return null;
+                // Handle "YYYY-MM-DD" or "DD-MMM-YYYY"
+                const parts = dateStr.includes(' ') ? dateStr.split(' ')[0].split('-') : dateStr.split('-');
+
+                // Format: YYYY-MM-DD
+                if (parts[0].length === 4) {
+                    return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+                }
+
+                // Format: DD-MMM-YYYY
+                const months = { 'JAN': 0, 'FEB': 1, 'MAR': 2, 'APR': 3, 'MAY': 4, 'JUN': 5, 'JUL': 6, 'AUG': 7, 'SEP': 8, 'OCT': 9, 'NOV': 10, 'DEC': 11 };
+                const mStr = parts[1].toUpperCase();
+                const mIdx = months[mStr];
+
+                if (mIdx !== undefined) {
+                    return new Date(parseInt(parts[2]), mIdx, parseInt(parts[0]));
+                }
+
+                // Fallback: DD-MM-YYYY
+                if (!isNaN(parseInt(mStr))) {
+                    return new Date(parseInt(parts[2]), parseInt(mStr) - 1, parseInt(parts[0]));
+                }
+                return null;
+            };
+
+            const filingDate = parseDate(fullFilingDate);
+            if (!filingDate || isNaN(filingDate.getTime())) {
+                console.warn(`QuarterlyAnalysis [${symbol}]: Invalid filing date format: ${fullFilingDate}`);
+                return null;
+            }
+
+            // Market Date logic
+            let marketDate = new Date(filingDate);
+            const timePart = fullFilingDate.includes(' ') ? fullFilingDate.split(' ')[1] : null;
+            if (timePart) {
+                const [hh, mm] = timePart.split(':');
+                // Market closes at 15:30. If filing is after, reaction is next trading day.
+                if (parseInt(hh) > 15 || (parseInt(hh) === 15 && parseInt(mm) >= 30)) {
+                    marketDate.setDate(marketDate.getDate() + 1);
+                }
+            }
+
+            // Helper to parse price date (always DD-MMM-YYYY from NSE)
+            const getPriceDate = (p) => {
+                const parts = p.mtimestamp.split('-');
+                const months = { 'JAN': 0, 'FEB': 1, 'MAR': 2, 'APR': 3, 'MAY': 4, 'JUN': 5, 'JUL': 6, 'AUG': 7, 'SEP': 8, 'OCT': 9, 'NOV': 10, 'DEC': 11 };
+                return new Date(parseInt(parts[2]), months[parts[1].toUpperCase()], parseInt(parts[0]));
+            };
+
+            const marketTime = marketDate.getTime();
+            const filingIdx = prices.findIndex(p => {
+                const pDate = getPriceDate(p).getTime();
+                return pDate >= marketTime;
+            });
+
+            if (filingIdx === -1) {
+                const lastPrice = prices[prices.length - 1];
+                console.warn(`QuarterlyAnalysis [${symbol}]: Price data ends (${lastPrice?.mtimestamp}) before market date (${marketDate.toDateString()})`);
+                return null;
+            }
+
+            // Anchor is the closing price of the day BEFORE the reaction day (filingIdx)
+            // We search backwards from filingIdx to find the latest valid trading day
+            let basePrice = null;
+            let baseIdx = filingIdx - 1;
+            while (baseIdx >= 0) {
+                if (prices[baseIdx].chClosingPrice && prices[baseIdx].chClosingPrice > 0) {
+                    basePrice = prices[baseIdx].chClosingPrice;
+                    break;
+                }
+                baseIdx--;
+            }
+
+            if (!basePrice) {
+                const firstPrice = prices[0];
+                console.warn(`QuarterlyAnalysis [${symbol}]: No base price found before ${prices[filingIdx].mtimestamp}. History starts at ${firstPrice?.mtimestamp}`);
+                return null;
+            }
+
+            const dayPrice = prices[filingIdx].chClosingPrice;
+            const nextDayPrice = prices[filingIdx + 1]?.chClosingPrice;
+            const nextWeekIdx = Math.min(filingIdx + 5, prices.length - 1);
+            const nextWeekPrice = prices[nextWeekIdx].chClosingPrice;
+
+            const calc = (p, b) => {
+                if (!p || !b) return '-';
+                const diff = (((p - b) / b) * 100).toFixed(2);
+                const color = diff > 0 ? 'green' : (diff < 0 ? 'red' : 'inherit');
+                return `<span style="color:${color}">${diff}%</span>`;
+            };
+
+            return {
+                day: calc(dayPrice, basePrice),
+                nextDay: calc(nextDayPrice, dayPrice),
+                nextWeek: calc(nextWeekPrice, dayPrice)
+            };
+        } catch (e) {
+            console.error(`QuarterlyAnalysis [${symbol}]: Calc Error for ${fullFilingDate}`, e);
+            return null;
+        }
+    }
+};
+
+// Expose for debugging in isolated world console
+window.QuarterlyAnalysis = QuarterlyAnalysis;
+
 
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
