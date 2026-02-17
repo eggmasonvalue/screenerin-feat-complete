@@ -34,20 +34,34 @@ The extension uses two strategies to gather data:
 | **FCF Conversion** | `Free Cash Flow / Net Profit` | **Free Cash Flow**: See below. <br> **Net Profit**: P&L (`Net Profit`). |
 | **Free Cash Flow** | `CFO + Net Capex` | **CFO**: Cash Flow (`Cash from Operating Activity`) <br> **Net Capex**: `Fixed assets purchased` (negative outflow) + `Fixed assets sold` (positive inflow) <br> *Note: Both Capex items are silently fetched via API from `Cash from Investing Activity` breakdown.* |
 
-## Data Fetching Details
-
-The extension creates a unified data context by merging visible table data with hidden API data.
+### UI Integration
+- **Target Container**: The "Analysis Template" dropdown is injected into the native `flex-row` that contains the "Standalone Figures" status. This ensures it's on the same line as native Screener controls, with no redundant "Analysis Template:" label.
+- **Theming**: The extension uses a theme-aware CSS approach involving high-specificity selectors (`body.dark .sif-dropdown`) to strictly enforce the native dark mode palette (dark background, light text).
+- **Table Styling**: The custom ratios table uses Screener's native `data-table responsive-text-nowrap` classes to ensure perfect font matching, right-aligned numbers, left-aligned attributes, and striped rows.
 
 ### `DeepFetcher` Targets
 These parent sections are queried to extract specific child rows:
-1.  **`Material Cost %` (P&L)**: Extracts `Raw material cost`.
-2.  **`Other Liabilities` (Balance Sheet)**: Extracts `Trade Payables`.
-3.  **`Other Assets` (Balance Sheet)**: Extracts `Inventories`, `Trade receivables`, `Cash Equivalents`, `Loans n Advances`.
+1.  **`Material Cost %` (P&L)**: Extracts `Raw material cost`, `Change in inventory`.
+2.  **`Other Liabilities` (Balance Sheet)**: Extracts `Trade Payables`, `Other liability items`.
+3.  **`Other Assets` (Balance Sheet)**: Extracts `Inventories`, `Trade receivables`, `Cash Equivalents`, `Loans n Advances`, `Other asset items`.
 4.  **`Cash from Investing Activity` (Cash Flow)**: Extracts `Fixed assets purchased`, `Fixed assets sold`.
+
+### robust `companyId` Retrieval
+The extension retrieves the `companyId` by checking:
+1. `document.body.dataset.companyId`
+2. `div#company-info` data-attribute (Primary for latest Screener UI).
+3. Any element with `data-company-id`.
 
 ### Aliasing & Normalization
 To handle inconsistent naming across different companies, the parser:
--   **Lowercases** all keys (e.g., "Trade Receivables" -> "trade receivables").
+-   **Lowercases** all keys.
+-   **Removes Trailing Symbols**: Cleans `+` or `-` from metric names.
 -   **Maps Aliases**:
     -   `equity capital` -> `share capital`
+    -   `reserves` -> `revenue reserves`
+    -   `borrowings` -> `total debt`, `long term borrowings`
+    -   `trade receivables` -> `debtors`, `sundry debtors`
+    -   `inventories` -> `inventory`, `stock`
     -   `cash from operating activity` -> `net cash flow from operating activities`
+    -   `fixed assets` -> `net block`, `property, plant and equipment`
+    -   `net profit` -> `pat`, `profit after tax`

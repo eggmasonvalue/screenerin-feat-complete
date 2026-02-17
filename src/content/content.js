@@ -4,7 +4,7 @@
  * v5.1.0: Company Ratios Dashboard & Quarterly Analysis
  */
 
-console.log("Screener Content Script Active (v5.1.4-opt-year)");
+console.log("Screener Content Script Active (v5.1.5-fix-ratio-ui)");
 
 let stockMap = null;
 let industryHierarchy = null;
@@ -1038,7 +1038,7 @@ const CompanyStrategy = {
         return window.location.pathname.includes('/company/');
     },
     init: async () => {
-        console.log("Screener Filter: Company Strategy Active");
+        console.log("Screener Filter: Company Strategy Init Start");
 
         // Wait for Ratios section at the bottom (max 6 seconds)
         let retries = 0;
@@ -1051,12 +1051,15 @@ const CompanyStrategy = {
 
         const container = getContainer();
         if (!container) {
-            console.warn("Screener Filter: Ratios footer section (#ratios) not found.");
+            console.warn("Screener Filter: Ratios footer section (#ratios) not found after retries.");
             return;
         }
+        console.log("Screener Filter: Ratios container found.");
 
         // 0. Pre-fetch granular data silently (No UI expansion)
+        console.log("Screener Filter: Fetching deep data...");
         const deepData = await DeepFetcher.fetchAll();
+        console.log("Screener Filter: Deep data fetch complete.", Object.keys(deepData).length, "metrics found.");
 
         // 1. Data Parsing
         const financialData = DataParser.parseAll();
@@ -1068,21 +1071,33 @@ const CompanyStrategy = {
         // 1.5 Merge Deep Data
         DataParser.mergeDeepData(financialData, deepData);
 
-        // 2. Initialize UI
+        // 2. Initialize UI (Footer Ratios)
+        console.log("Screener Filter: Initializing RatioUI...");
         RatioUI.init(financialData);
 
-        // 3. Quarterly Results Augmentation
+        // 3. Quarterly Results Augmentation (Preserve User Feature)
+        console.log("Screener Filter: Initializing QuarterlyAnalysis...");
         await QuarterlyAnalysis.init();
+        console.log("Screener Filter: Company Strategy Init Complete.");
     }
 };
 
 const DeepFetcher = {
     fetchAll: async () => {
         try {
-            if (!window.Company || !window.Company.info) return {};
+            // Robust companyId retrieval
+            const companyId = document.getElementById('company-info')?.dataset.companyId ||
+                document.querySelector('[data-company-id]')?.dataset.companyId ||
+                document.body.dataset.companyId;
 
-            const companyId = window.Company.info.companyId;
-            const isConsolidated = window.Company.info.isConsolidated; // boolean
+            console.log("DeepFetcher: Resolved companyId:", companyId);
+            if (!companyId) {
+                console.warn("DeepFetcher: Failed to find company ID. Searched #company-info, [data-company-id], and body dataset.");
+                return {};
+            }
+
+            // Check if consolidated
+            const isConsolidated = document.body.innerText.includes('Consolidated Figures');
 
             const targets = [
                 { parent: 'Material Cost %', section: 'profit-loss' },
@@ -1091,7 +1106,20 @@ const DeepFetcher = {
                 { parent: 'Cash from Investing Activity', section: 'cash-flow' }
             ];
 
-            const requests = targets.map(t => DeepFetcher.fetchSchedule(companyId, isConsolidated, t.parent, t.section));
+            // Some companies have 'Other Liabilities -' or 'Other Assets +'
+            // We'll try to match by partial text if exact fails, but since we fetch by ID,
+            // we should try to find the exact name from the DOM first.
+            const findExactName = (text) => {
+                const btn = Array.from(document.querySelectorAll('button, tr td'))
+                    .find(el => el.innerText.trim().toLowerCase().startsWith(text.toLowerCase()));
+                return btn ? btn.innerText.trim().replace(/\s*[+\-]$/, '') : text;
+            };
+
+            const requests = targets.map(t => {
+                const exactParent = findExactName(t.parent);
+                console.log(`DeepFetcher: Requesting schedule for "${exactParent}" in ${t.section}`);
+                return DeepFetcher.fetchSchedule(companyId, isConsolidated, exactParent, t.section);
+            });
             const results = await Promise.all(requests);
 
             // Merge all results into a single dictionary
@@ -1099,6 +1127,8 @@ const DeepFetcher = {
             results.forEach(res => {
                 Object.assign(combined, res);
             });
+
+            console.log(`DeepFetcher: Combined ${Object.keys(combined).length} hidden metrics.`);
             return combined;
         } catch (e) {
             console.error("Screener Filter: DeepFetch failed", e);
@@ -1178,8 +1208,12 @@ const DataParser = {
             const values = [];
             for (let i = 1; i < cells.length; i++) {
                 const txt = cells[i].innerText.trim().replace(/,/g, '');
-                // Handle percentages in text if present (e.g. "12%")
-                const val = parseFloat(txt.replace('%', ''));
+                // Handle percentages or bracketed negatives "(123)"
+                let cleanedTxt = txt.replace('%', '');
+                if (cleanedTxt.startsWith('(') && cleanedTxt.endsWith(')')) {
+                    cleanedTxt = '-' + cleanedTxt.slice(1, -1);
+                }
+                const val = parseFloat(cleanedTxt);
                 values.push(isNaN(val) ? null : val);
             }
 
@@ -1192,42 +1226,41 @@ const DataParser = {
     mergeDeepData: (financialData, deepData) => {
         if (!deepData || Object.keys(deepData).length === 0) return;
 
-        // Map existing years to indices
-        // financialData.years = ["Mar 2024", "Mar 2023", ...]
         const yearMap = {};
         financialData.years.forEach((y, i) => yearMap[y] = i);
 
-        // Iterate over deep metrics
-        // deepData = { "Raw material cost": { "Mar 2024": "100", ... }, ... }
         for (const [metric, yearValues] of Object.entries(deepData)) {
             const cleanKey = metric.trim().toLowerCase();
-
-            // Initialize array if not present (or overwrite if partial)
-            // We use the Profit Loss table logic (usually) or Balance Sheet logic
-            // Since we don't know the exact source table of the deep metric easily, 
-            // and RatioCalculator looks in pl/bs/cf, we can try to infer or just add to ALL contexts?
-            // Actually, RatioCalculator uses `get('pl', key)` etc.
-            // It's safer to add these deep metrics to a 'deep' source or inject into matching source.
-            // But simplify: Inject into 'pl' AND 'bs' AND 'cf' so lookups find it anywhere.
-            // It's a bit hacky but guarantees discovery.
-
             const values = new Array(financialData.years.length).fill(null);
 
+            let foundAny = false;
             for (const [year, valStr] of Object.entries(yearValues)) {
                 if (yearMap.hasOwnProperty(year)) {
                     const idx = yearMap[year];
-                    // Clean value: "12,345" -> 12345, "65%" -> 65
                     let txt = valStr.toString().replace(/,/g, '');
                     if (txt.includes('%')) txt = txt.replace('%', '');
+                    if (txt.startsWith('(') && txt.endsWith(')')) txt = '-' + txt.slice(1, -1);
                     const val = parseFloat(txt);
-                    if (!isNaN(val)) values[idx] = val;
+                    if (!isNaN(val)) {
+                        values[idx] = val;
+                        foundAny = true;
+                    }
                 }
             }
 
-            // Inject into all contexts because we don't track source in DeepFetcher
-            financialData.pl[cleanKey] = values;
-            financialData.bs[cleanKey] = values;
-            financialData.cf[cleanKey] = values;
+            if (foundAny) {
+                const overwriteIfEmpty = (sourceKey, key, newValues) => {
+                    const existing = financialData[sourceKey][key];
+                    // If doesn't exist OR is all nulls/zeros, overwrite
+                    if (!existing || existing.every(v => v === null || v === 0)) {
+                        financialData[sourceKey][key] = newValues;
+                    }
+                };
+
+                overwriteIfEmpty('pl', cleanKey, values);
+                overwriteIfEmpty('bs', cleanKey, values);
+                overwriteIfEmpty('cf', cleanKey, values);
+            }
         }
     }
 };
@@ -1239,20 +1272,35 @@ const RatioCalculator = {
             try {
                 // Helper to safely get value for year i with case-insensitive and alias support
                 const get = (source, key) => {
-                    const row = data[source][key.toLowerCase()];
+                    const cleanKey = key.toLowerCase();
+                    const row = data[source][cleanKey];
                     if (row) return row[i];
-                    // Fallback Aliases
+
+                    // Fallback Aliases (Screener is inconsistent)
                     const aliases = {
-                        'equity capital': 'share capital',
-                        'raw material cost': 'material cost %', // Fallback
-                        'change in inventory': 'change in stock', // Common alias
-                        'cash equivalents': 'cash & equivalents',
-                        'cash from operating activity': 'net cash flow from operating activities'
+                        'equity capital': ['share capital'],
+                        'reserves': ['revenue reserves'],
+                        'borrowings': ['total debt', 'long term borrowings'],
+                        'trade receivables': ['debtors', 'sundry debtors'],
+                        'inventories': ['inventory', 'stock'],
+                        'cash equivalents': ['cash & equivalents', 'cash and bank', 'bank balance'],
+                        'trade payables': ['creditors', 'sundry creditors'],
+                        'investments': ['long term investments', 'short term investments'],
+                        'loans n advances': ['loans and advances', 'short-term loans and advances'],
+                        'fixed assets': ['net block', 'property, plant and equipment'],
+                        'net profit': ['pat', 'profit after tax', 'net profit +'],
+                        'profit before tax': ['pbt'],
+                        'tax %': ['effective tax rate'],
+                        'operating profit': ['ebitda', 'ebitda excluding other income'],
+                        'cash from operating activity': ['net cash flow from operating activities', 'cash flow from operating activities'],
+                        'fixed assets purchased': ['purchase of fixed assets', 'capital expenditure'],
+                        'fixed assets sold': ['sale of fixed assets']
                     };
-                    const aliasKey = aliases[key.toLowerCase()];
-                    if (aliasKey) {
-                        const aliasRow = data[source][aliasKey];
-                        return aliasRow ? aliasRow[i] : null;
+
+                    const possibleKeys = aliases[cleanKey] || [];
+                    for (const ak of possibleKeys) {
+                        const aRow = data[source][ak];
+                        if (aRow) return aRow[i];
                     }
 
                     return null;
@@ -1495,22 +1543,26 @@ const RatioTemplates = {
     'Liquidity': [
         {
             name: 'Current Ratio', unit: 'times', formula: c => {
-                const currAssets = (c.bs('Inventories') || 0) + (c.bs('Trade receivables') || 0) + (c.bs('Cash Equivalents') || 0) + (c.bs('Loans n Advances') || 0);
-                const currLiab = (c.bs('Trade Payables') || 0) + (c.bs('Other liability items') || 0);
+                const sub = (v) => v || 0;
+                // Screener labels Current Assets as sub-items of 'Other Assets' or 'Other Assets +'
+                const currAssets = sub(c.bs('Inventories')) + sub(c.bs('Trade receivables')) + sub(c.bs('Cash Equivalents')) + sub(c.bs('Loans n Advances')) + sub(c.bs('Other asset items'));
+                const currLiab = sub(c.bs('Trade Payables')) + sub(c.bs('Other liability items'));
                 return currLiab ? currAssets / currLiab : null;
             }
         },
         {
             name: 'Quick Ratio', unit: 'times', formula: c => {
-                const quickAssets = (c.bs('Trade receivables') || 0) + (c.bs('Cash Equivalents') || 0) + (c.bs('Loans n Advances') || 0);
-                const currLiab = (c.bs('Trade Payables') || 0) + (c.bs('Other liability items') || 0);
+                const sub = (v) => v || 0;
+                const quickAssets = sub(c.bs('Trade receivables')) + sub(c.bs('Cash Equivalents')) + sub(c.bs('Loans n Advances')) + sub(c.bs('Other asset items'));
+                const currLiab = sub(c.bs('Trade Payables')) + sub(c.bs('Other liability items'));
                 return currLiab ? quickAssets / currLiab : null;
             }
         },
         {
             name: 'Cash Ratio', unit: 'times', formula: c => {
-                const cash = c.bs('Cash Equivalents') || 0;
-                const currLiab = (c.bs('Trade Payables') || 0) + (c.bs('Other liability items') || 0);
+                const sub = (v) => v || 0;
+                const cash = sub(c.bs('Cash Equivalents'));
+                const currLiab = sub(c.bs('Trade Payables')) + sub(c.bs('Other liability items'));
                 return currLiab ? cash / currLiab : null;
             }
         }
@@ -1628,14 +1680,31 @@ const RatioUI = {
                 vertical-align: middle;
             }
             #sif-ratio-controls {
-                margin: 10px 0;
-                padding: 8px;
-                background: var(--bg-card, #f9f9f9);
-                border: 1px solid var(--border-color, #eee);
-                border-radius: 4px;
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
+                display: flex !important;
+                align-items: center !important;
+                gap: 8px !important;
+                margin-left: auto !important;
+            }
+            .sif-dropdown {
+                font-size: 13px !important;
+                padding: 2px 8px !important;
+                border: 1px solid var(--border-color, #dae1e7) !important;
+                border-radius: 4px !important;
+                background: #fff !important;
+                color: #111 !important;
+                cursor: pointer !important;
+                height: 28px !important;
+                line-height: 1 !important;
+                -webkit-appearance: menulist !important;
+                appearance: menulist !important;
+            }
+            /* Definite Native Dark Mode support */
+            body.dark .sif-dropdown,
+            html.dark .sif-dropdown,
+            .dark .sif-dropdown {
+                background: #2a2e33 !important;
+                color: #eee !important;
+                border: 1px solid #444 !important;
             }
         `;
         document.head.appendChild(style);
@@ -1644,18 +1713,51 @@ const RatioUI = {
     renderControls: (container) => {
         if (document.getElementById('sif-ratio-controls')) return;
 
+        // Target the native options container (flex-row containing Standalone/Consolidated text)
+        // We look for any div/p that specifies Standalone/Consolidated figures
+        const targetText = 'Figures in Rs. Crores';
+        let optionsArea = Array.from(container.querySelectorAll('div.flex-row, .flex-space-between'))
+            .find(el => el.textContent.includes(targetText));
+
+        if (!optionsArea) {
+            const sub = Array.from(container.querySelectorAll('p, span')).find(el => el.textContent.includes(targetText));
+            if (sub) {
+                optionsArea = sub.closest('div.flex-row') || sub.closest('.flex-space-between') || sub.parentElement;
+            }
+        }
+
+        console.log("RatioUI: optionsArea resolved?", !!optionsArea, "class:", optionsArea?.className);
+
+        if (!optionsArea) {
+            console.log("RatioUI: Falling back to header wrap.");
+            const heading = container.querySelector('h2');
+            if (heading) {
+                const flexRow = document.createElement('div');
+                flexRow.className = 'flex-row flex-space-between flex-gap-16';
+                flexRow.style.display = 'flex';
+                flexRow.style.justifyContent = 'space-between';
+                flexRow.style.alignItems = 'center';
+                flexRow.style.width = '100%';
+                flexRow.style.marginBottom = '10px';
+
+                heading.parentNode.insertBefore(flexRow, heading);
+                flexRow.appendChild(heading);
+                optionsArea = flexRow;
+            } else {
+                optionsArea = container;
+            }
+        } else {
+            // Ensure the found optionsArea is a flex container for proper spacing
+            optionsArea.style.display = 'flex';
+            optionsArea.style.justifyContent = 'space-between';
+            optionsArea.style.alignItems = 'center';
+        }
+
         const wrapper = document.createElement('div');
         wrapper.id = 'sif-ratio-controls';
 
-        const label = document.createElement('span');
-        label.innerHTML = '<strong>Analysis Template:</strong>';
-        label.style.fontSize = '13px';
-        wrapper.appendChild(label);
-
         const select = document.createElement('select');
         select.className = 'sif-dropdown';
-        select.style.flex = '1';
-        select.style.marginLeft = '10px';
 
         Object.keys(RatioTemplates).forEach(key => {
             const opt = document.createElement('option');
@@ -1670,22 +1772,34 @@ const RatioUI = {
             RatioUI.renderTable(container);
         };
         wrapper.appendChild(select);
-
-        // Insert before the table or at top of section
-        const table = container.querySelector('table');
-        if (table) {
-            container.insertBefore(wrapper, table);
-        } else {
-            container.appendChild(wrapper);
-        }
+        optionsArea.appendChild(wrapper);
     },
 
     renderTable: (container) => {
         // 1. Reset to native state
         if (RatioUI.state.nativeHTML) {
-            const controls = container.querySelector('#sif-ratio-controls');
+            const controls = document.getElementById('sif-ratio-controls');
             container.innerHTML = RatioUI.state.nativeHTML;
-            if (controls) container.prepend(controls);
+
+            // Re-inject controls into the newly rendered native header
+            if (controls) {
+                // Ensure label is gone inside controls if it exists
+                const labelInControls = controls.querySelector('.sif-label');
+                if (labelInControls) labelInControls.remove();
+
+                const targetText = 'Figures in Rs. Crores';
+                let optionsArea = Array.from(container.querySelectorAll('.flex-row, .flex-space-between'))
+                    .find(el => el.textContent.includes(targetText));
+                if (optionsArea) {
+                    optionsArea.appendChild(controls);
+                    optionsArea.style.display = 'flex';
+                    optionsArea.style.justifyContent = 'space-between';
+                    optionsArea.style.alignItems = 'center';
+                    optionsArea.style.width = '100%';
+                } else {
+                    container.prepend(controls);
+                }
+            }
         }
 
         if (RatioUI.state.template === 'Screener Default') return;
@@ -1695,25 +1809,32 @@ const RatioUI = {
         if (!template) return;
 
         const table = document.createElement('table');
-        table.className = 'data-table'; // Screener native table class
+        table.className = 'data-table responsive-text-nowrap'; // Exact native classes
 
         // Headers
         const thead = document.createElement('thead');
         const headerRow = document.createElement('tr');
-        headerRow.innerHTML = `<th class="text-left">Attributes</th>` +
+        headerRow.innerHTML = `<th class="text">Attributes</th>` +
             RatioUI.data.years.map(y => `<th>${y}</th>`).join('');
         thead.appendChild(headerRow);
         table.appendChild(thead);
 
         // Body
         const tbody = document.createElement('tbody');
-        template.forEach(r => {
+
+        template.forEach((r, i) => {
             try {
                 const values = RatioCalculator.calculate(RatioUI.data, r);
                 const tr = document.createElement('tr');
-                const fmt = U[r.unit] || U.num;
+                if (i % 2 !== 0) tr.className = 'stripe';
 
-                tr.innerHTML = `<td class="text-left" style="font-weight: 500;">${r.name}</td>` +
+                const fmt = (val) => {
+                    if (val === null || val === undefined) return '';
+                    if (r.unit === '%') return val.toFixed(0) + '%';
+                    return val.toFixed(2);
+                };
+
+                tr.innerHTML = `<td class="text">${r.name}</td>` +
                     values.map(v => `<td>${fmt(v)}</td>`).join('');
                 tbody.appendChild(tr);
             } catch (e) {
