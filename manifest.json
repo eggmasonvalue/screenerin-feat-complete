@@ -4,7 +4,8 @@
   "version": "5.1.18",
   "description": "Adds industry filtering to Screener.in results.",
   "permissions": [
-    "storage"
+    "storage",
+    "alarms"
   ],
   "host_permissions": [
     "https://www.screener.in/*",
