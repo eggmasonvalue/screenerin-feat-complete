@@ -49,30 +49,6 @@
       line-height: 1.4;
     }
 
-    button {
-      width: 100%;
-      padding: 12px 16px;
-      cursor: pointer;
-      background: var(--primary);
-      color: white;
-      border: none;
-      border-radius: 8px;
-      font-family: var(--font-stack);
-      font-size: 14px;
-      font-weight: 500;
-      transition: opacity 0.2s;
-      box-shadow: none;
-    }
-
-    button:hover {
-      opacity: 0.9;
-    }
-
-    button:disabled {
-      background: #ccc;
-      cursor: wait;
-    }
-
     /* Progress bar styling */
     .progress {
       margin-top: 20px;
@@ -106,8 +82,6 @@
   <!-- Full Bleed Layout -->
   <h2>Industry Database</h2>
   <div class="status" id="status">Checking database...</div>
-
-  <button id="refreshBtn">Initialize Database</button>
 
   <div class="progress" id="progressContainer">
     <div class="bar" id="progressBar"></div>
