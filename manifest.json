@@ -8,7 +8,8 @@
   ],
   "host_permissions": [
     "https://www.screener.in/*",
-    "https://www.nseindia.com/*"
+    "https://www.nseindia.com/*",
+    "https://raw.githubusercontent.com/*"
   ],
   "action": {
     "default_popup": "src/popup/popup.html",
