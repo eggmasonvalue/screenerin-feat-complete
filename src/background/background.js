@@ -4,6 +4,7 @@
  */
 
 const BASE_DELAY = 350;
+const INDUSTRY_DATA_URL = 'https://raw.githubusercontent.com/eggmasonvalue/stock-industry-map-in/master/out/industry_data.json';
 
 /**
  * Utility to pause execution
@@ -62,80 +63,131 @@ async function fetchWithBackoff(url, retries = 3) {
 }
 
 /**
+ * Smart fetch implementation that respects ETag
+ * @param {string} url
+ * @returns {Promise<{text: string | null, etag: string | null, status: number}>}
+ */
+async function fetchSmart(url) {
+    try {
+        const storage = await chrome.storage.local.get(['lastETag']);
+        const headers = {};
+        if (storage.lastETag) {
+            headers['If-None-Match'] = storage.lastETag;
+        }
+
+        console.log(`Smart Fetching: ${url}`, headers);
+        const response = await fetch(url, { headers });
+
+        if (response.status === 304) {
+            console.log("Smart Fetch: 304 Not Modified. Data is up to date.");
+            return { text: null, etag: null, status: 304 };
+        }
+
+        if (response.ok) {
+            const text = await response.text();
+            const etag = response.headers.get('etag');
+            console.log("Smart Fetch: 200 OK. New data received.", { etag });
+            return { text, etag, status: 200 };
+        }
+
+        throw new Error(`HTTP ${response.status}`);
+
+    } catch (err) {
+        console.error("Smart Fetch Failed:", err);
+        throw err;
+    }
+}
+
+/**
  * Builds the complete industry database
  * @param {Function} sendProgress Callback to send status updates
  */
 async function buildDatabase(sendProgress) {
     try {
         console.log("Starting database build...");
-        sendProgress({ status: "Fetching industry data...", progress: 0 });
+        sendProgress({ status: "Checking for updates...", progress: 0 });
 
         // Reset State
         updateState({
             isActive: true,
-            status: "Fetching industry data...",
+            status: "Checking for updates...",
             progress: 0,
             details: "",
             error: false
         });
 
-        const INDUSTRY_DATA_URL = 'https://raw.githubusercontent.com/eggmasonvalue/stock-industry-map-in/master/out/industry_data.json';
-        const jsonText = await fetchWithBackoff(INDUSTRY_DATA_URL);
-        const json = JSON.parse(jsonText);
+        const result = await fetchSmart(INDUSTRY_DATA_URL);
 
-        sendProgress({ status: "Processing data...", progress: 50 });
-
-        const stockToIndustry = {};
-        const industryHierarchy = {};
-        const timestamp = Date.now();
-        let stocksFound = 0;
-
-        // json.data[SYMBOL] = [Macro, Sector, Industry, Basic Industry]
-        for (const [symbol, hierarchyArray] of Object.entries(json.data)) {
-             if (hierarchyArray.length < 4) continue;
-
-             const [macro, sector, industry, basicIndustry] = hierarchyArray;
-
-             // Update Stock Map
-             stockToIndustry[symbol] = basicIndustry;
-
-             // Update Hierarchy Map
-             if (!industryHierarchy[basicIndustry]) {
-                 industryHierarchy[basicIndustry] = {
-                     macro,
-                     sector,
-                     industry,
-                     basicIndustry
-                 };
-             }
-             stocksFound++;
+        if (result.status === 304) {
+            // Data hasn't changed
+            await chrome.storage.local.set({ lastUpdated: Date.now() });
+            sendProgress({
+                isActive: false,
+                status: "Data is up-to-date!",
+                progress: 100,
+                details: "No new updates found on GitHub."
+            });
+            return;
         }
 
-        const totalIndustries = Object.keys(industryHierarchy).length;
-        const stats = {
-            totalIndustries: totalIndustries,
-            industriesScraped: totalIndustries,
-            stocksFound: stocksFound,
-            startTime: timestamp,
-            errors: []
-        };
+        if (result.status === 200 && result.text) {
+            sendProgress({ status: "Processing new data...", progress: 50 });
 
-        console.log(`Database built. Saving ${Object.keys(stockToIndustry).length} stocks and ${totalIndustries} hierarchies.`);
+            const json = JSON.parse(result.text);
+            const stockToIndustry = {};
+            const industryHierarchy = {};
+            const timestamp = Date.now();
+            let stocksFound = 0;
 
-        await chrome.storage.local.set({
-            stockMap: stockToIndustry,
-            industryHierarchy: industryHierarchy,
-            lastUpdated: timestamp,
-            dbStats: stats
-        });
+            // json.data[SYMBOL] = [Macro, Sector, Industry, Basic Industry]
+            for (const [symbol, hierarchyArray] of Object.entries(json.data)) {
+                 if (hierarchyArray.length < 4) continue;
 
-        sendProgress({
-            isActive: false,
-            status: "Complete!",
-            progress: 100,
-            count: Object.keys(stockToIndustry).length,
-            stats: stats
-        });
+                 const [macro, sector, industry, basicIndustry] = hierarchyArray;
+
+                 // Update Stock Map
+                 stockToIndustry[symbol] = basicIndustry;
+
+                 // Update Hierarchy Map
+                 if (!industryHierarchy[basicIndustry]) {
+                     industryHierarchy[basicIndustry] = {
+                         macro,
+                         sector,
+                         industry,
+                         basicIndustry
+                     };
+                 }
+                 stocksFound++;
+            }
+
+            const totalIndustries = Object.keys(industryHierarchy).length;
+            const stats = {
+                totalIndustries: totalIndustries,
+                industriesScraped: totalIndustries,
+                stocksFound: stocksFound,
+                startTime: timestamp,
+                errors: []
+            };
+
+            console.log(`Database built. Saving ${Object.keys(stockToIndustry).length} stocks and ${totalIndustries} hierarchies.`);
+
+            // Save data AND the new ETag
+            await chrome.storage.local.set({
+                stockMap: stockToIndustry,
+                industryHierarchy: industryHierarchy,
+                lastUpdated: timestamp,
+                dbStats: stats,
+                lastETag: result.etag
+            });
+
+            sendProgress({
+                isActive: false,
+                status: "Update Complete!",
+                progress: 100,
+                count: Object.keys(stockToIndustry).length,
+                stats: stats
+            });
+        }
 
     } catch (err) {
         console.error("Database Build Failed:", err);
@@ -162,6 +214,33 @@ function updateState(newState) {
     // Broadcast to any open popups
     chrome.runtime.sendMessage({ action: "progressUpdate", data: scrapingState }).catch(() => { });
 }
+
+// Auto-Fetch Logic
+const ALARM_NAME = "check_industry_updates";
+
+// Check for updates on startup
+chrome.runtime.onStartup.addListener(() => {
+    console.log("Extension Startup: Triggering update check.");
+    buildDatabase((state) => {
+        // Just log progress internally, no popup might be open
+        console.log("Startup Update:", state.status);
+    });
+});
+
+// Create periodic alarm (e.g., once every 24 hours)
+chrome.runtime.onInstalled.addListener(() => {
+    chrome.alarms.create(ALARM_NAME, {
+        periodInMinutes: 1440 // 24 hours
+    });
+});
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === ALARM_NAME) {
+        console.log("Alarm Triggered: Checking for updates.");
+        buildDatabase((state) => console.log("Alarm Update:", state.status));
+    }
+});
+
 
 /**
  * Message Listener for Extension Communication

@@ -16,7 +16,7 @@ A powerful Chrome Extension that adds high-impact features to India's most belov
   - **[Upcoming Results](https://www.screener.in/upcoming-results/)**
   - **[Latest Results](https://www.screener.in/results/latest/)**
   - **[Concalls](https://www.screener.in/concalls/)**
-  - **[Upcoming Concalls](https://www.screener.in/concalls/upcoming/)** 
+  - **[Upcoming Concalls](https://www.screener.in/concalls/upcoming/)**
     - **Note**: this doesn't work. It's a placeholder for when screener.in adds filtering support for upcoming concalls.
 
 **Learn More**: Visit [NSE Industry Classification](https://www.nseindia.com/static/products-services/industry-classification) to understand the four levels: Macro Economic Sector → Sector → Industry → Basic Industry. The filter applies at the Basic Industry level but is searchable across all levels.
@@ -77,6 +77,14 @@ A powerful Chrome Extension that adds high-impact features to India's most belov
     - `TableStrategy`: Handles standard data tables.
     - `ListStrategy`: Handles complex list/card layouts with paired DOM nodes.
 - **Rate Limiting**: Smart backoff system to respect Screener.in server limits.
+
+## 🔄 Data Synchronization
+
+The extension automatically keeps the industry classification database up-to-date:
+
+1.  **Smart Fetching**: On startup and once daily, the extension checks for updates from the [external industry map](https://github.com/eggmasonvalue/stock-industry-map-in).
+2.  **Efficient Sync**: It uses `ETag` headers to ensure data is only downloaded when it has actually changed on GitHub. If the data is unchanged (HTTP 304), no bandwidth is used.
+3.  **Zero-Config**: Users don't need to manually refresh the database, though a "Refresh" button is available in the popup if needed.
 
 ## 🤝 Contributing
 
