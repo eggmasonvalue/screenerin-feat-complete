@@ -4,17 +4,18 @@
  */
 
 const BASE_DELAY = 350;
+const INDUSTRY_DATA_URL = 'https://raw.githubusercontent.com/eggmasonvalue/stock-industry-map-in/master/out/industry_data.json';
 
 /**
  * Utility to pause execution
- * @param {number} ms 
+ * @param {number} ms
  */
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
  * Fetch with automatic retries and exponential backoff for rate limits
- * @param {string} url 
- * @param {number} retries 
+ * @param {string} url
+ * @param {number} retries
  * @returns {Promise<string>}
  */
 // Global counter for persistent backoff scaling
@@ -62,121 +63,39 @@ async function fetchWithBackoff(url, retries = 3) {
 }
 
 /**
- * Scrapes the main market page to get a list of all industries
- * @returns {Promise<Array<{url: string, name: string}>>}
+ * Smart fetch implementation that respects ETag
+ * @param {string} url
+ * @returns {Promise<{text: string | null, etag: string | null, status: number}>}
  */
-async function fetchIndustryList() {
-    const text = await fetchWithBackoff('https://www.screener.in/market/');
-
-    // Regex to capture URL and Industry Name from Screener's market page
-    const industryRegex = /<a[^>]+href="(\/market\/IN[^"]+?\/)"[^>]*>([\s\S]*?)<\/a>/g;
-    const matches = [...text.matchAll(industryRegex)];
-
-    const industryMap = new Map();
-
-    matches.forEach(m => {
-        const url = `https://www.screener.in${m[1]}`;
-        const name = m[2].trim().replace(/&amp;/g, '&');
-        // Avoid urls with query params which might be duplicates or subsets
-        if (!url.includes("?")) {
-            industryMap.set(url, name);
+async function fetchSmart(url) {
+    try {
+        const storage = await chrome.storage.local.get(['lastETag']);
+        const headers = {};
+        if (storage.lastETag) {
+            headers['If-None-Match'] = storage.lastETag;
         }
-    });
 
-    return Array.from(industryMap.entries()).map(([url, name]) => ({ url, name }));
-}
+        console.log(`Smart Fetching: ${url}`, headers);
+        const response = await fetch(url, { headers });
 
-/**
- * Scrapes an individual industry page for stock symbols and hierarchy
- * @param {string} url 
- * @returns {Promise<{symbols: string[], hierarchy: object}>}
- */
-async function scrapeIndustryPage(url) {
-    const stocks = new Set();
-    let hierarchy = null;
-    let nextUrl = `${url}?limit=100`;
-
-    let pages = 0;
-    while (nextUrl && pages < 10) { // Limit to 10 pages per industry to avoid infinite loops
-        try {
-            const text = await fetchWithBackoff(nextUrl);
-
-            // Extract hierarchy from breadcrumb (only on first page)
-            if (pages === 0 && !hierarchy) {
-                // Find the breadcrumb by locating the "Industries" link and getting its parent UL
-                // Pattern: <a href="/market/">Industries</a> ... <a>Macro</a> ... <a>Sector</a> ... <a>Industry</a> ... Basic Industry
-                const industriesLinkRegex = /<a[^>]*href="\/market\/"[^>]*>([^<]+)<\/a>/i;
-                const industriesMatch = text.match(industriesLinkRegex);
-
-                if (industriesMatch) {
-                    // Find the UL container that includes this link
-                    const ulStartIndex = text.lastIndexOf('<ul', industriesMatch.index);
-                    const ulEndIndex = text.indexOf('</ul>', industriesMatch.index) + 5;
-
-                    if (ulStartIndex !== -1 && ulEndIndex !== -1) {
-                        const breadcrumbHTML = text.substring(ulStartIndex, ulEndIndex);
-
-                        // Extract all link texts from breadcrumb (ignoring icons)
-                        const linkRegex = /<a[^>]*href="\/market\/[^"]*"[^>]*>([^<]+)<\/a>/g;
-                        const links = [...breadcrumbHTML.matchAll(linkRegex)].map(m => m[1].trim());
-
-                        // Also get the last text (Basic Industry) which might not be a link
-                        // Look for text after the last </a> tag
-                        const lastLinkIndex = breadcrumbHTML.lastIndexOf('</a>');
-                        const remainingHTML = breadcrumbHTML.substring(lastLinkIndex);
-                        const textMatch = remainingHTML.match(/>([^<>]+)</);
-                        const lastText = textMatch ? textMatch[1].trim() : '';
-
-                        // Expected links: ["Industries", "Macro", "Sector", "Industry"]
-                        // Plus lastText: "Basic Industry"
-                        if (links.length >= 4) {
-                            hierarchy = {
-                                macro: links[1],
-                                sector: links[2],
-                                industry: links[3],
-                                basicIndustry: lastText || links[4] || links[links.length - 1]
-                            };
-                        }
-                    }
-                }
-            }
-
-            // Extract stock symbols from company links
-            const stockRegex = /href="\/company\/([A-Za-z0-9-]+)\//g;
-            const stockMatches = [...text.matchAll(stockRegex)];
-
-            if (stockMatches.length === 0) break;
-
-            stockMatches.forEach(m => {
-                const symbol = m[1];
-                if (symbol.toLowerCase() !== "industry") {
-                    stocks.add(symbol);
-                }
-            });
-
-            // If we have fewer than 50 stocks, it's likely the last page (Screener uses 50-100 per page)
-            if (stockMatches.length < 50) {
-                nextUrl = null;
-            } else {
-                pages++;
-                const currentUrlObj = new URL(nextUrl);
-                let pageNum = parseInt(currentUrlObj.searchParams.get("page") || "1");
-                currentUrlObj.searchParams.set("page", pageNum + 1);
-                nextUrl = currentUrlObj.toString();
-            }
-
-            await delay(BASE_DELAY + Math.random() * 50);
-
-        } catch (e) {
-            console.error("Error scraping " + nextUrl, e);
-            break;
+        if (response.status === 304) {
+            console.log("Smart Fetch: 304 Not Modified. Data is up to date.");
+            return { text: null, etag: null, status: 304 };
         }
+
+        if (response.ok) {
+            const text = await response.text();
+            const etag = response.headers.get('etag');
+            console.log("Smart Fetch: 200 OK. New data received.", { etag });
+            return { text, etag, status: 200 };
+        }
+
+        throw new Error(`HTTP ${response.status}`);
+
+    } catch (err) {
+        console.error("Smart Fetch Failed:", err);
+        throw err;
     }
-
-    return {
-        symbols: Array.from(stocks),
-        hierarchy: hierarchy
-    };
 }
 
 /**
@@ -186,81 +105,89 @@ async function scrapeIndustryPage(url) {
 async function buildDatabase(sendProgress) {
     try {
         console.log("Starting database build...");
-        sendProgress({ status: "Fetching industry list...", progress: 0 });
-
-        const industries = await fetchIndustryList();
-        console.log(`Found ${industries.length} industries.`);
-
-        const stockToIndustry = {};
-        const industryHierarchy = {};
-        const timestamp = Date.now();
-
-        const stats = {
-            totalIndustries: industries.length,
-            industriesScraped: 0,
-            stocksFound: 0,
-            startTime: timestamp,
-            errors: []
-        };
+        sendProgress({ status: "Checking for updates...", progress: 0 });
 
         // Reset State
         updateState({
             isActive: true,
-            status: "Fetching industry list...",
+            status: "Checking for updates...",
             progress: 0,
             details: "",
             error: false
         });
 
-        let completed = 0;
+        const result = await fetchSmart(INDUSTRY_DATA_URL);
 
-        for (const ind of industries) {
-            try {
-                const result = await scrapeIndustryPage(ind.url);
-
-                result.symbols.forEach(sym => {
-                    stockToIndustry[sym] = ind.name;
-                });
-
-                // Store hierarchy for this basic industry
-                if (result.hierarchy) {
-                    industryHierarchy[ind.name] = result.hierarchy;
-                }
-
-                stats.industriesScraped++;
-                stats.stocksFound += result.symbols.length;
-
-            } catch (err) {
-                console.error(`Failed to scrape ${ind.name}`, err);
-                stats.errors.push(`Failed: ${ind.name}`);
-            }
-
-            completed++;
-            const percent = Math.round((completed / industries.length) * 100);
+        if (result.status === 304) {
+            // Data hasn't changed
+            await chrome.storage.local.set({ lastUpdated: Date.now() });
             sendProgress({
-                isActive: true,
-                status: `Scraping: ${ind.name} (${completed}/${industries.length})`,
-                progress: percent,
-                details: `Stocks found so far: ${stats.stocksFound}`
+                isActive: false,
+                status: "Data is up-to-date!",
+                progress: 100,
+                details: "No new updates found on GitHub."
             });
+            return;
         }
 
-        console.log(`Database built. Saving ${Object.keys(stockToIndustry).length} stocks and ${Object.keys(industryHierarchy).length} hierarchies.`);
+        if (result.status === 200 && result.text) {
+            sendProgress({ status: "Processing new data...", progress: 50 });
 
-        await chrome.storage.local.set({
-            stockMap: stockToIndustry,
-            industryHierarchy: industryHierarchy,
-            lastUpdated: timestamp,
-            dbStats: stats
-        });
+            const json = JSON.parse(result.text);
+            const stockToIndustry = {};
+            const industryHierarchy = {};
+            const timestamp = Date.now();
+            let stocksFound = 0;
 
-        sendProgress({
-            isActive: false,
-            status: "Complete!",
-            progress: 100,
-            count: Object.keys(stockToIndustry).length,
-            stats: stats
-        });
+            // json.data[SYMBOL] = [Macro, Sector, Industry, Basic Industry]
+            for (const [symbol, hierarchyArray] of Object.entries(json.data)) {
+                 if (hierarchyArray.length < 4) continue;
+
+                 const [macro, sector, industry, basicIndustry] = hierarchyArray;
+
+                 // Update Stock Map
+                 stockToIndustry[symbol] = basicIndustry;
+
+                 // Update Hierarchy Map
+                 if (!industryHierarchy[basicIndustry]) {
+                     industryHierarchy[basicIndustry] = {
+                         macro,
+                         sector,
+                         industry,
+                         basicIndustry
+                     };
+                 }
+                 stocksFound++;
+            }
+
+            const totalIndustries = Object.keys(industryHierarchy).length;
+            const stats = {
+                totalIndustries: totalIndustries,
+                industriesScraped: totalIndustries,
+                stocksFound: stocksFound,
+                startTime: timestamp,
+                errors: []
+            };
+
+            console.log(`Database built. Saving ${Object.keys(stockToIndustry).length} stocks and ${totalIndustries} hierarchies.`);
+
+            // Save data AND the new ETag
+            await chrome.storage.local.set({
+                stockMap: stockToIndustry,
+                industryHierarchy: industryHierarchy,
+                lastUpdated: timestamp,
+                dbStats: stats,
+                lastETag: result.etag
+            });
+
+            sendProgress({
+                isActive: false,
+                status: "Update Complete!",
+                progress: 100,
+                count: Object.keys(stockToIndustry).length,
+                stats: stats
+            });
+        }
 
     } catch (err) {
         console.error("Database Build Failed:", err);
@@ -287,6 +214,33 @@ function updateState(newState) {
     // Broadcast to any open popups
     chrome.runtime.sendMessage({ action: "progressUpdate", data: scrapingState }).catch(() => { });
 }
+
+// Auto-Fetch Logic
+const ALARM_NAME = "check_industry_updates";
+
+// Check for updates on startup
+chrome.runtime.onStartup.addListener(() => {
+    console.log("Extension Startup: Triggering update check.");
+    buildDatabase((state) => {
+        // Just log progress internally, no popup might be open
+        console.log("Startup Update:", state.status);
+    });
+});
+
+// Create periodic alarm (e.g., once every 24 hours)
+chrome.runtime.onInstalled.addListener(() => {
+    chrome.alarms.create(ALARM_NAME, {
+        periodInMinutes: 1440 // 24 hours
+    });
+});
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === ALARM_NAME) {
+        console.log("Alarm Triggered: Checking for updates.");
+        buildDatabase((state) => console.log("Alarm Update:", state.status));
+    }
+});
+
 
 /**
  * Message Listener for Extension Communication
@@ -327,7 +281,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 /**
  * Specifically fetches and parses Market Cap for the portfolio feature
- * @param {string} url 
+ * @param {string} url
  * @returns {Promise<number>}
  */
 async function fetchMarketCapFromPage(url) {
@@ -350,4 +304,3 @@ async function fetchMarketCapFromPage(url) {
         throw e;
     }
 }
-

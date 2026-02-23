@@ -4,11 +4,13 @@
   "version": "5.1.18",
   "description": "Adds industry filtering to Screener.in results.",
   "permissions": [
-    "storage"
+    "storage",
+    "alarms"
   ],
   "host_permissions": [
     "https://www.screener.in/*",
-    "https://www.nseindia.com/*"
+    "https://www.nseindia.com/*",
+    "https://raw.githubusercontent.com/*"
   ],
   "action": {
     "default_popup": "src/popup/popup.html",
