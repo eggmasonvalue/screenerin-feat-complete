@@ -5,6 +5,7 @@ A powerful Chrome Extension that adds high-impact features to India's most belov
 ## 🚀 Features
 
 ### 1. Industry Filter Widget with Multi-Level Search
+![Industry Filter Widget](assets/screenshots/IndustryFilter.png)
 - **Native Integration**: Adds a "By Basic Industry" dropdown seamlessly into the Screener sidebar.
 - **Multi-Level Hierarchy Search**: Search industries by any NSE classification level:
   - Type **"Consumer"** → See all Consumer Discretionary industries
@@ -22,18 +23,21 @@ A powerful Chrome Extension that adds high-impact features to India's most belov
 **Learn More**: Visit [NSE Industry Classification](https://www.nseindia.com/static/products-services/industry-classification) to understand the four levels: Macro Economic Sector → Sector → Industry → Basic Industry. The filter applies at the Basic Industry level but is searchable across all levels.
 
 ### 2. Aggregate Statistics
+![Filtered Industry Results & Aggregate Stats](assets/screenshots/IndustryResults.png)
 - **Latest Results Analytics**: Among the filtered entities, view Median, Average, and Standard Deviation for YoY growth in Sales, EBITDA, Net Profit, and EPS.
 
-### 3. Superinvestor portfolio analysis
-  - `screener.in/people/*/#shareholdings` pages now have **"₹ Cr"** (Value) and **"% PF"** (Percentage of Portfolio) columns.
+### 3. Superinvestor portfolio size view
+![Superinvestor Shareholding Analysis](assets/screenshots/Shareholding.png)
+> Buying into the hype of a superinvestor throwing 50bps into a hot stock? Not anymore.
+  - `screener.in/people/*/#shareholdings` pages now have **"₹ Cr"** (Value) and **"% PF"** (Percentage of Portfolio) columns. 
 
 ### 4. Company Ratios Dashboard
+![Company Ratios Dashboard](assets/screenshots/Ratios.png)
 - **Instant Insights**: Re-imagines the Ratios section on individual company pages.
 - **Multiple Templates**: Quickly switch between different analytical views (Efficiency, Liquidity, Solvency, Cash Flow, etc.).
-- **Smart Data Capture**: Preserves Screener's native default ratios by capturing them directly from the DOM.
-- **Seamless UI**: Vertically centered and baseline-aligned with the native header for a clean, integrated look.
 
 ### 5. Quarterly Analysis & Price Reactions
+![Quarterly Earnings Dates and Price Reactions](assets/screenshots/EarningsDateReaction.png)
 - **Earnings History**: View exact results announcement dates directly in the "Quarters" table.
 - **Market Impact**: Instantly see price reactions (Day, Next Day, and Week) for each quarter.
 - **Holiday-Aware**: Robust logic handles announcements on market holidays and weekends by automatic shifting to the next trading day.
@@ -51,31 +55,14 @@ A powerful Chrome Extension that adds high-impact features to India's most belov
 4.  Click **Load unpacked**.
 5.  Select the directory containing this `manifest.json`.
 
-## 📖 Usage
 
-1.  **Initialize Database**:
-    - Click the extension icon in the toolbar.
-    - Click **"Initialize Industry Database"**.
-    - **Backoff Feedback**: If Screener.in applies rate limits, the popup provides real-time feedback on the backoff duration.
-    - Note: This is a one-time setup (suggested to be refreshed once a quarter).
+**Note: Works on mobile views too**:
+Use mobile browsers like [Quetta](https://www.quetta.net/) (not an endorsement) that support custom extensions.
 
-2.  **Filter Results**:
-    - Go to any supported page (e.g., [Upcoming Results](https://www.screener.in/upcoming-results/)).
-    - Use the **"Scan All Pages"** button to aggregate results across multiple pages.
-    - Select an industry from the **"By Industry"** widget to filter.
-
-3. **Works on mobile views too**:
-    - Use mobile browsers like [Quetta](https://www.quetta.net/) (not an endorsement) that support custom extensions.
-
-  Note: No setup required for superinvestor portfolio analysis.
 
 ## 🏗️ Architecture
 
 - **Manifest V3**: Secure and performant.
-- **Hierarchy Extraction**: During database initialization, extracts NSE's 4-level classification from breadcrumb navigation on each industry page and stores it for multi-level search.
-- **Specialized Strategies**:
-    - `TableStrategy`: Handles standard data tables.
-    - `ListStrategy`: Handles complex list/card layouts with paired DOM nodes.
 - **Rate Limiting**: Smart backoff system to respect Screener.in server limits.
 
 ## 🔄 Data Synchronization
@@ -86,13 +73,9 @@ The extension automatically keeps the industry classification database up-to-dat
 2.  **Efficient Sync**: It uses `ETag` headers to ensure data is only downloaded when it has actually changed on GitHub. If the data is unchanged (HTTP 304), no bandwidth is used.
 3.  **Zero-Config**: Users don't need to manually refresh the database, though a "Refresh" button is available in the popup if needed.
 
-## 🤝 Contributing
-
-1.  Fork the repository.
-2.  Create a feature branch (`git checkout -b feature/amazing-feature`).
-3.  Commit your changes.
-4.  Push to the branch.
-5.  Open a Pull Request.
-
 ---
 *Note: This is an unofficial extension and is not affiliated with Screener.in.*
+
+## 📜 License
+
+This project is licensed under the **GNU General Public License v3.0**. See the [LICENSE](LICENSE) file for more details.

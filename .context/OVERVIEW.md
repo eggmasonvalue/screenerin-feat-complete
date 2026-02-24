@@ -15,3 +15,4 @@
 - **Platform**: Chrome Extension (Manifest V3)
 - **Language**: Vanilla JavaScript, HTML, CSS
 - **Storage**: `chrome.storage.local`
+- **License**: GNU GPL v3.0

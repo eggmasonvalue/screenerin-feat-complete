@@ -1398,28 +1398,10 @@ const RatioTemplates = {
     ],
     'Efficiency': [
         {
-            name: 'ROE %', unit: 'pct', formula: c => {
-                const sub = (v) => v || 0;
-                const equity = sub(c.bs('Equity Capital')) + sub(c.bs('Reserves'));
-                const prevEquity = sub(c.prev('bs', 'Equity Capital')) + sub(c.prev('bs', 'Reserves'));
-                const avgEquity = prevEquity ? (equity + prevEquity) / 2 : equity;
-                return avgEquity ? (c.pl('Net Profit') || 0) / avgEquity * 100 : null;
-            }
-        },
-        {
-            name: 'ROCE %', unit: 'pct', formula: c => {
-                const ebit = c.pl('Profit before tax') + (c.pl('Interest') || 0);
-                const capitalEmployed = (c.bs('Equity Capital') + c.bs('Reserves') + c.bs('Borrowings'));
-                const prevCap = (c.prev('bs', 'Equity Capital') + (c.prev('bs', 'Reserves') || 0) + (c.prev('bs', 'Borrowings') || 0));
-                const avgCap = prevCap ? (capitalEmployed + prevCap) / 2 : capitalEmployed;
-                return avgCap ? ebit / avgCap * 100 : null;
-            }
-        },
-        {
-            name: 'ROIC %', unit: 'pct', formula: c => {
-                const ebit = c.pl('Profit before tax') + (c.pl('Interest') || 0);
+            name: 'ROIC %', description: '((Operating Profit - Depreciation) * (1 - Tax %)) / Avg(Equity Capital + Reserves + Borrowings - Cash Equivalents - Investments)', unit: 'pct', formula: c => {
+                const coreOp = c.pl('Operating Profit') - (c.pl('Depreciation') || 0);
                 const taxRate = (c.pl('Tax %') || 25) / 100;
-                const nopat = ebit * (1 - taxRate);
+                const nopat = coreOp * (1 - taxRate);
 
                 // Invested Capital = (Total Assets - Current Liabilities) - Cash - Investments
                 // Approximation: (Equity + Reserves + Borrowings) - Cash - Investments
@@ -1439,7 +1421,7 @@ const RatioTemplates = {
             }
         },
         {
-            name: 'Inventory Turnover', unit: 'times', formula: c => {
+            name: 'Inventory Turnover', description: 'COGS / Avg Inventories   [where COGS = Raw material cost + Change in inventory]', unit: 'times', formula: c => {
                 // Professional Analyst COGS Calculation
                 // 1. Try to get explicit 'Raw material cost' + 'Change in inventory' (from DeepFetch)
                 const rawMat = c.pl('Raw material cost');
@@ -1465,132 +1447,66 @@ const RatioTemplates = {
             }
         },
         {
-            name: 'Fixed Asset Turnover', unit: 'times', formula: c => {
+            name: 'Fixed Asset Turnover', description: 'Sales / Avg Fixed Assets', unit: 'times', formula: c => {
                 const sales = c.pl('Sales');
                 const fa = c.bs('Fixed Assets');
                 const prevFa = c.prev('bs', 'Fixed Assets');
                 const avgFa = prevFa ? (fa + prevFa) / 2 : fa;
                 return avgFa ? sales / avgFa : null;
             }
-        },
-        {
-            name: 'Debtor Days', unit: 'days', formula: c => {
-                const sales = c.pl('Sales');
-                const rec = c.bs('Trade receivables');
-                const prevRec = c.prev('bs', 'Trade receivables');
-                const avgRec = prevRec ? (rec + prevRec) / 2 : rec;
-                return sales ? (avgRec / sales) * 365 : null;
-            }
-        },
-        {
-            name: 'Inventory Days', unit: 'days', formula: c => {
-                const rawMat = c.pl('Raw material cost');
-                const changeInv = c.pl('Change in inventory') || 0;
-                let cogs = null;
-                if (rawMat !== null) cogs = rawMat + changeInv;
-                else {
-                    const sales = c.pl('Sales');
-                    const matPct = c.pl('Material Cost %');
-                    if (sales !== null && matPct !== null) cogs = sales * (matPct / 100);
-                }
-                const inv = c.bs('Inventories');
-                const prevInv = c.prev('bs', 'Inventories');
-                const avgInv = prevInv ? (inv + prevInv) / 2 : inv;
-                return cogs ? (avgInv / cogs) * 365 : null;
-            }
-        },
-        {
-            name: 'Days Payable', unit: 'days', formula: c => {
-                const rawMat = c.pl('Raw material cost');
-                const changeInv = c.pl('Change in inventory') || 0;
-                let purchases = null;
-                if (rawMat !== null) purchases = rawMat + changeInv;
-
-                const payables = c.bs('Trade Payables');
-                const prevPayables = c.prev('bs', 'Trade Payables');
-                const avgPayables = prevPayables ? (payables + prevPayables) / 2 : payables;
-                return purchases ? (avgPayables / purchases) * 365 : null;
-            }
-        },
-        {
-            name: 'Working Capital Days', unit: 'days', formula: c => {
-                // Ensure RatioTemplates is fully defined/accessible via deferred execution or direct lookups
-                // Since this runs later, it should be fine.
-                const findRatio = (name) => {
-                    // Search all categories
-                    for (const cat in RatioTemplates) {
-                        const r = RatioTemplates[cat].find(x => x.name === name);
-                        if (r) return r;
-                    }
-                    return null;
-                };
-
-                const d = findRatio('Debtor Days');
-                const i = findRatio('Inventory Days');
-                const p = findRatio('Days Payable');
-
-                if (!d || !i || !p) return null;
-
-                const dDays = d.formula(c);
-                const iDays = i.formula(c);
-                const pDays = p.formula(c);
-
-                if (dDays === null || iDays === null || pDays === null) return null;
-                return dDays + iDays - pDays;
-            }
         }
     ],
     'Liquidity': [
         {
-            name: 'Current Ratio', unit: 'times', formula: c => {
+            name: 'Current Ratio', description: '(Inventories + Trade receivables + Cash Equivalents + Loans n Advances + Other asset items) / (Trade Payables + Advance from Customers + Other liability items)', unit: 'times', formula: c => {
                 const sub = (v) => v || 0;
                 // Screener labels Current Assets as sub-items of 'Other Assets' or 'Other Assets +'
                 const currAssets = sub(c.bs('Inventories')) + sub(c.bs('Trade receivables')) + sub(c.bs('Cash Equivalents')) + sub(c.bs('Loans n Advances')) + sub(c.bs('Other asset items'));
-                const currLiab = sub(c.bs('Trade Payables')) + sub(c.bs('Other liability items'));
+                const currLiab = sub(c.bs('Trade Payables')) + sub(c.bs('Advance from Customers')) + sub(c.bs('Other liability items'));
                 return currLiab ? currAssets / currLiab : null;
             }
         },
         {
-            name: 'Quick Ratio', unit: 'times', formula: c => {
+            name: 'Quick Ratio', description: '(Trade receivables + Cash Equivalents + Loans n Advances + Other asset items) / (Trade Payables + Advance from Customers + Other liability items)', unit: 'times', formula: c => {
                 const sub = (v) => v || 0;
                 const quickAssets = sub(c.bs('Trade receivables')) + sub(c.bs('Cash Equivalents')) + sub(c.bs('Loans n Advances')) + sub(c.bs('Other asset items'));
-                const currLiab = sub(c.bs('Trade Payables')) + sub(c.bs('Other liability items'));
+                const currLiab = sub(c.bs('Trade Payables')) + sub(c.bs('Advance from Customers')) + sub(c.bs('Other liability items'));
                 return currLiab ? quickAssets / currLiab : null;
             }
         },
         {
-            name: 'Cash Ratio', unit: 'times', formula: c => {
+            name: 'Cash Ratio', description: 'Cash Equivalents / (Trade Payables + Advance from Customers + Other liability items)', unit: 'times', formula: c => {
                 const sub = (v) => v || 0;
                 const cash = sub(c.bs('Cash Equivalents'));
-                const currLiab = sub(c.bs('Trade Payables')) + sub(c.bs('Other liability items'));
+                const currLiab = sub(c.bs('Trade Payables')) + sub(c.bs('Advance from Customers')) + sub(c.bs('Other liability items'));
                 return currLiab ? cash / currLiab : null;
             }
         }
     ],
     'Solvency': [
         {
-            name: 'Debt to Equity', unit: 'times', formula: c => {
+            name: 'Debt to Equity', description: 'Borrowings / (Equity Capital + Reserves)', unit: 'times', formula: c => {
                 const debt = c.bs('Borrowings');
                 const equity = (c.bs('Equity Capital') || 0) + (c.bs('Reserves') || 0);
                 return equity ? debt / equity : null;
             }
         },
         {
-            name: 'Interest Coverage', unit: 'times', formula: c => {
+            name: 'Interest Coverage', description: 'Operating Profit / Interest', unit: 'times', formula: c => {
                 const op = c.pl('Operating Profit');
                 const int = c.pl('Interest');
                 return int ? op / int : null;
             }
         },
         {
-            name: 'Debt to Assets', unit: 'times', formula: c => {
+            name: 'Debt to Assets', description: 'Borrowings / Total Assets', unit: 'times', formula: c => {
                 const debt = c.bs('Borrowings');
                 const assets = c.bs('Total Assets');
                 return assets ? debt / assets : null;
             }
         },
         {
-            name: 'Financial Leverage', unit: 'times', formula: c => {
+            name: 'Financial Leverage', description: 'Total Assets / (Equity Capital + Reserves)', unit: 'times', formula: c => {
                 const assets = c.bs('Total Assets');
                 const equity = (c.bs('Equity Capital') || 0) + (c.bs('Reserves') || 0);
                 return equity ? assets / equity : null;
@@ -1599,35 +1515,37 @@ const RatioTemplates = {
     ],
     'Cash Flow': [
         {
-            name: 'CFO / EBITDA', formula: c => {
+            name: 'CFO / EBITDA', description: 'Cash from Operating Activity / Operating Profit', formula: c => {
                 const cfo = c.cf('Cash from Operating Activity');
-                const ebitda = c.pl('Operating Profit') + (c.pl('Other Income') || 0);
+                const ebitda = c.pl('Operating Profit');
                 return ebitda ? cfo / ebitda : null;
             }
         },
         {
-            name: 'CFO / PAT', formula: c => {
+            name: 'CFO / PAT', description: 'Cash from Operating Activity / Net Profit', formula: c => {
                 const cfo = c.cf('Cash from Operating Activity');
                 const pat = c.pl('Net Profit');
                 return pat ? cfo / pat : null;
             }
         },
         {
-            name: 'FCF Conversion', formula: c => {
+            name: 'FCF Conversion', description: '(Cash from Operating Activity - (|Fixed assets purchased| - Fixed assets sold)) / Net Profit', formula: c => {
                 const cfo = c.cf('Cash from Operating Activity');
-                // Capex is Net Capex = Fixed assets purchased (outflow) + Fixed assets sold (inflow)
-                const capex = (c.cf('Fixed assets purchased') || 0) + (c.cf('Fixed assets sold') || 0);
-                const fcf = cfo + capex;
+                const capexInvested = Math.abs(c.cf('Fixed assets purchased') || 0);
+                const capexSold = c.cf('Fixed assets sold') || 0;
+                const netCapex = capexInvested - capexSold;
+                const fcf = cfo - netCapex;
                 const pat = c.pl('Net Profit');
                 return pat ? fcf / pat * 100 : null;
             }
         },
         {
-            name: 'Free Cash Flow', formula: c => {
+            name: 'Free Cash Flow', description: 'Cash from Operating Activity - (|Fixed assets purchased| - Fixed assets sold)', formula: c => {
                 const cfo = c.cf('Cash from Operating Activity');
-                // Capex is Net Capex = Fixed assets purchased (outflow) + Fixed assets sold (inflow)
-                const capex = (c.cf('Fixed assets purchased') || 0) + (c.cf('Fixed assets sold') || 0);
-                return (cfo !== null) ? cfo + capex : null;
+                const capexInvested = Math.abs(c.cf('Fixed assets purchased') || 0);
+                const capexSold = c.cf('Fixed assets sold') || 0;
+                const netCapex = capexInvested - capexSold;
+                return (cfo !== null) ? cfo - netCapex : null;
             }
         }
     ]
@@ -1834,7 +1752,9 @@ const RatioUI = {
                     return val.toFixed(2);
                 };
 
-                tr.innerHTML = `<td class="text">${r.name}</td>` +
+                const tooltipHtml = r.description ? `<span class="screener-warning-container" style="margin-left:4px;"><i class="icon-info screener-warning-icon"><span class="screener-tooltip">${r.description}</span></i></span>` : '';
+
+                tr.innerHTML = `<td class="text">${r.name}${tooltipHtml}</td>` +
                     values.map(v => `<td>${fmt(v)}</td>`).join('');
                 tbody.appendChild(tr);
             } catch (e) {
@@ -2069,10 +1989,22 @@ const QuarterlyAnalysis = {
         const rows = Array.from(tbody.querySelectorAll('tr'));
         const pdfRow = rows.find(r => r.innerText.includes('Raw PDF'));
 
+        const injectedRows = [];
+
         [earningsDateRow, dayReactionRow, nextDayRow, nextWeekRow].forEach(rowData => {
             const tr = document.createElement('tr');
+            let firstTdContent = rowData.name;
+
+            if (rowData.name === 'Reaction') {
+                firstTdContent = `Reaction <button class="button-plain toggle-reaction-btn" style="color: #3f51b5; font-size: 14px; padding: 0; margin-left: 2px; font-weight: bold; cursor: pointer; vertical-align: baseline;">+</button>`;
+            } else if (rowData.name === 'Next Day' || rowData.name === 'Next Week') {
+                firstTdContent = `<span style="padding-left: 1.5rem; font-size: 0.9em; color: var(--sif-secondary);">${rowData.name}</span>`;
+                tr.style.display = 'none'; // hidden by default
+                tr.classList.add('ext-reaction-child'); // to select easily
+            }
+
             tr.innerHTML = `
-                <td style="text-align: left; font-weight: 500;">${rowData.name}</td>
+                <td class="text" style="text-align: left; font-weight: 500;">${firstTdContent}</td>
                 ${rowData.values.map(v => `<td>${v}</td>`).join('')}
             `;
             if (pdfRow) {
@@ -2080,7 +2012,28 @@ const QuarterlyAnalysis = {
             } else {
                 tbody.appendChild(tr);
             }
+            injectedRows.push(tr);
         });
+
+        // Add toggle logic to 'Reaction' row
+        // injectedRows index: 0=Earnings, 1=Reaction, 2=Next Day, 3=Next Week
+        const reactionTr = injectedRows[1];
+        const nextDayTr = injectedRows[2];
+        const nextWeekTr = injectedRows[3];
+
+        const toggleBtn = reactionTr.querySelector('.toggle-reaction-btn');
+        const reactionLabelCell = reactionTr.querySelector('td');
+
+        if (reactionLabelCell) {
+            reactionLabelCell.style.cursor = 'pointer';
+            reactionLabelCell.addEventListener('click', (e) => {
+                e.preventDefault();
+                const isHidden = nextDayTr.style.display === 'none';
+                nextDayTr.style.display = isHidden ? '' : 'none';
+                nextWeekTr.style.display = isHidden ? '' : 'none';
+                if (toggleBtn) toggleBtn.innerText = isHidden ? '−' : '+';
+            });
+        }
     },
 
     calculateReactionFromPrices: async (symbol, fullFilingDate, prices) => {

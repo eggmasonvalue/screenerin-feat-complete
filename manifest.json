@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Screener.in Industry Filter",
-  "version": "5.1.18",
+  "version": "6.0.0",
   "description": "Adds industry filtering to Screener.in results.",
   "permissions": [
     "storage",
@@ -12,14 +12,6 @@
     "https://www.nseindia.com/*",
     "https://raw.githubusercontent.com/*"
   ],
-  "action": {
-    "default_popup": "src/popup/popup.html",
-    "default_icon": {
-      "16": "assets/icons/icon16.png",
-      "48": "assets/icons/icon48.png",
-      "128": "assets/icons/icon128.png"
-    }
-  },
   "icons": {
     "16": "assets/icons/icon16.png",
     "48": "assets/icons/icon48.png",
