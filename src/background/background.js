@@ -102,37 +102,19 @@ async function fetchSmart(url) {
  * Builds the complete industry database
  * @param {Function} sendProgress Callback to send status updates
  */
-async function buildDatabase(sendProgress) {
+async function buildDatabase() {
     try {
         console.log("Starting database build...");
-        sendProgress({ status: "Checking for updates...", progress: 0 });
-
-        // Reset State
-        updateState({
-            isActive: true,
-            status: "Checking for updates...",
-            progress: 0,
-            details: "",
-            error: false
-        });
 
         const result = await fetchSmart(INDUSTRY_DATA_URL);
 
         if (result.status === 304) {
             // Data hasn't changed
             await chrome.storage.local.set({ lastUpdated: Date.now() });
-            sendProgress({
-                isActive: false,
-                status: "Data is up-to-date!",
-                progress: 100,
-                details: "No new updates found on GitHub."
-            });
             return;
         }
 
         if (result.status === 200 && result.text) {
-            sendProgress({ status: "Processing new data...", progress: 50 });
-
             const json = JSON.parse(result.text);
             const stockToIndustry = {};
             const industryHierarchy = {};
@@ -141,23 +123,23 @@ async function buildDatabase(sendProgress) {
 
             // json.data[SYMBOL] = [Macro, Sector, Industry, Basic Industry]
             for (const [symbol, hierarchyArray] of Object.entries(json.data)) {
-                 if (hierarchyArray.length < 4) continue;
+                if (hierarchyArray.length < 4) continue;
 
-                 const [macro, sector, industry, basicIndustry] = hierarchyArray;
+                const [macro, sector, industry, basicIndustry] = hierarchyArray;
 
-                 // Update Stock Map
-                 stockToIndustry[symbol] = basicIndustry;
+                // Update Stock Map
+                stockToIndustry[symbol] = basicIndustry;
 
-                 // Update Hierarchy Map
-                 if (!industryHierarchy[basicIndustry]) {
-                     industryHierarchy[basicIndustry] = {
-                         macro,
-                         sector,
-                         industry,
-                         basicIndustry
-                     };
-                 }
-                 stocksFound++;
+                // Update Hierarchy Map
+                if (!industryHierarchy[basicIndustry]) {
+                    industryHierarchy[basicIndustry] = {
+                        macro,
+                        sector,
+                        industry,
+                        basicIndustry
+                    };
+                }
+                stocksFound++;
             }
 
             const totalIndustries = Object.keys(industryHierarchy).length;
@@ -179,40 +161,11 @@ async function buildDatabase(sendProgress) {
                 dbStats: stats,
                 lastETag: result.etag
             });
-
-            sendProgress({
-                isActive: false,
-                status: "Update Complete!",
-                progress: 100,
-                count: Object.keys(stockToIndustry).length,
-                stats: stats
-            });
         }
 
     } catch (err) {
         console.error("Database Build Failed:", err);
-        sendProgress({
-            isActive: false,
-            status: "Error: " + err.message,
-            progress: 0,
-            error: true
-        });
     }
-}
-
-// Track global state
-let scrapingState = {
-    isActive: false,
-    status: "",
-    progress: 0,
-    details: "",
-    error: false
-};
-
-function updateState(newState) {
-    scrapingState = { ...scrapingState, ...newState };
-    // Broadcast to any open popups
-    chrome.runtime.sendMessage({ action: "progressUpdate", data: scrapingState }).catch(() => { });
 }
 
 // Auto-Fetch Logic
@@ -221,10 +174,7 @@ const ALARM_NAME = "check_industry_updates";
 // Check for updates on startup
 chrome.runtime.onStartup.addListener(() => {
     console.log("Extension Startup: Triggering update check.");
-    buildDatabase((state) => {
-        // Just log progress internally, no popup might be open
-        console.log("Startup Update:", state.status);
-    });
+    buildDatabase();
 });
 
 // Create periodic alarm (e.g., once every 24 hours)
@@ -237,7 +187,7 @@ chrome.runtime.onInstalled.addListener(() => {
 chrome.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === ALARM_NAME) {
         console.log("Alarm Triggered: Checking for updates.");
-        buildDatabase((state) => console.log("Alarm Update:", state.status));
+        buildDatabase();
     }
 });
 
@@ -246,19 +196,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
  * Message Listener for Extension Communication
  */
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === "startScrape") {
-        if (scrapingState.isActive) {
-            sendResponse({ started: false, reason: "Already active" });
-            return;
-        }
-
-        buildDatabase((progressData) => {
-            updateState(progressData);
-        });
-        sendResponse({ started: true });
-    } else if (request.action === "getScrapeStatus") {
-        sendResponse(scrapingState);
-    } else if (request.action === "fetchMarketCap") {
+    if (request.action === "fetchMarketCap") {
         fetchMarketCapFromPage(request.url)
             .then(mcap => sendResponse({ mcap }))
             .catch(err => sendResponse({ error: err.message }));

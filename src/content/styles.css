@@ -231,8 +231,8 @@ body.dark {
 .screener-warning-icon {
   display: inline-block;
   margin-left: 10px;
-  color: #f59e0b;
-  /* Amber */
+  color: var(--sif-secondary);
+  /* Grey instead of Amber */
   cursor: help;
   font-size: 16px;
   font-weight: 900;
@@ -262,6 +262,7 @@ body.dark {
   border: 1px solid var(--sif-border);
   box-shadow: 0 4px 8px var(--sif-shadow);
   font-weight: normal;
+  white-space: normal !important;
 }
 
 .screener-warning-icon:hover .screener-tooltip {
@@ -273,4 +274,19 @@ body.dark {
   position: relative;
   display: inline-block;
   vertical-align: middle;
+}
+
+/* Ensure tooltip goes above sticky table cells by elevating the hovered cell's z-index and breaking overflow restrictions */
+td:has(.screener-warning-container:hover),
+th:has(.screener-warning-container:hover),
+tr:has(.screener-warning-container:hover) {
+  z-index: 9999 !important;
+  overflow: visible !important;
+}
+
+/* Break the tooltip out of the scrolling table container ONLY while hovering */
+.responsive-holder:has(.screener-warning-container:hover),
+.card:has(.screener-warning-container:hover),
+section:has(.screener-warning-container:hover) {
+  overflow: visible !important;
 }

@@ -33,30 +33,19 @@
 - **Mobile Resilience**: Uses `MutationObserver` to watch for header/sidebar transformations (common when Screener.in switches to modal-based filters on mobile) and re-executes injection logic.
 - **Styling (`src/content/styles.css`)**: Adaptive CSS for light/dark modes and custom UI components.
 
-### 3. Popup (`src/popup/popup.html` / `src/popup/popup.js`)
-- **Role**: Control Panel.
-- **Responsibility**:
-  - Allows user to manually trigger/refresh the industry database.
-  - **State Persistence**: Polls `getScrapeStatus` on load to restore active progress bars.
-  - Displays database status (count, last updated) and progress.
-
 ## Data Flow
 
 ```mermaid
 sequenceDiagram
     participant User
-    participant Popup
     participant Background
     participant Storage
+    participant GitHub(Data)
     participant Screener(External)
     participant Content
 
-    User->>Popup: Clicks "Initialize DB"
-    Popup->>Background: Message: "startScrape"
-    Background->>Screener: GET /market/ (Fetch list)
-    loop For each Industry
-        Background->>Screener: GET /company/industry/...?limit=100
-    end
+    Background->>GitHub(Data): Periodic GET /industry_data.json
+    GitHub(Data)-->>Background: Returns JSON mapping
     Background->>Storage: Save { stockMap, industryHierarchy }
     
     User->>Content: Navigates to /upcoming-results/

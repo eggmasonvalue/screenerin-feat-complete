@@ -3,7 +3,10 @@
 All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
+### Changed
+- **License Upgrade**: Re-licensed the project from MIT to **GNU GPL 3.0** to ensure long-term freedom and copyleft protection for all users and contributors.
 ### Improved
+- **Interactive Quarterly Analysis**: Made the "Reaction" row in the Quarterly Analysis section a collapsible element (with a '+' / '&minus;' toggle) that controls the visibility of the "Next Day" and "Next Week" rows. Polished to match native Screener.in collapsible behavior (blue toggle on the right, clickable labels).
 - **Professional Financial Ratios**: Upgraded the Ratios Dashboard to professional analyst standards:
     - **Inventory Turnover**: Implemented accurate COGS logic using "Raw material cost" and "Change in inventory" (with fallback to Material % of Sales).
     - **ROIC %**: Switched from a hardcoded 25% tax rate to a dynamic adjustment using the actual "Tax %" from the company's P&L.
@@ -24,13 +27,11 @@ All notable changes to this project will be documented in this file.
 - **Robust Quarterly Analysis**:
     - **Holiday/Weekend Handling**: Implemented "First Trading Day ON or AFTER" logic for price reactions. Corrects missing data for filings on non-trading days (e.g., Aug 15 Independence Day or Saturdays).
     - **Revision Date Support**: Added fallback to `revised_Date` for filings where `broadcast_Date` is null (fixes missing Mar 2025 earnings date for RKSWAMY and similar cases).
-    - **Smart "After Market" Logic**: Filings reported after 15:30 IST automatically shift the reaction date to the next trading day (T+1), ensuring the "Earnings Reaction" reflects the first market session that could respond to the news.
-    - **UI Polish**: Renamed reaction columns to "Reaction", "Next Day", "Next Week" for better readability and removed the year from the "Earnings Day" display (e.g., "12 Feb" instead of "12-Feb-2024") to reduce clutter.
-    - **Targeted Event Fetching**: Replaced broad historical data fetching with targeted, window-specific queries (10 days before to 15 days after each earnings event). This eliminates data truncation issues caused by NSE API limits (which caps responses at ~70-100 records) and ensures accurate reaction calculations even for volatile stocks like TRACXN.
-    - **Strict Date Capping**: Implemented capping of price fetch ranges to the current date/yesterday, preventing 404 errors when a filing is very recent or the date buffer extends into the future.
-    - **Enhanced Date Parsing**: Improved robustness of filing date parsing to handle multiple formats (DD-MMM-YYYY and YYYY-MM-DD) and increased the historical lookback buffer to 20 days to ensure the "earliest" shown quarter allows for accurate price reaction calculations (fixing missing data for Reliance).
-    - **Data Key Normalization**: Added fallbacks for NSE's inconsistent data formats (e.g., using `broadCastDate` or `exchdisstime` when `filingDate` is missing for older quarters).
-    - **Backwards Anchor Search**: Improved price reaction accuracy by searching backwards for the most recent valid closing price (non-zero) to serve as the baseline anchor.
+    - **Refined Reaction Display**: Renamed reaction columns for better readability and removed the year from dates to reduce clutter.
+- **Targeted Event Fetching**: Replaced broad historical data fetching with targeted, window-specific queries. This eliminates data truncation issues and ensures accurate reaction calculations.
+- **Smart Date Logic**: Filings reported after 15:30 IST automatically shift the reaction date to T+1. Implemented strict date capping to prevent 404 errors on recent filings.
+- **Enhanced Parsing**: Improved robustness of filing date parsing and increased lookback buffer to ensure accurate price reaction calculations. Added fallbacks for NSE's inconsistent data formats.
+- **Backwards Anchor Search**: Improved price reaction accuracy by searching backwards for the most recent valid closing price.
 
 ## [5.1.0] - 2026-02-16
 ### Added
@@ -49,16 +50,16 @@ All notable changes to this project will be documented in this file.
     - **Inventory/Payable/Debtor Days**: Implemented standard turnover-to-days conversion for working capital analysis.
     - **Dynamic Tax**: ROIC adjusts based on actual trailing tax rates.
     - **Net Capex**: FCF now accounts for both asset purchases and sales to determine net cash outflow.
-- **Simplified UI**: Removed custom ratio functionality to ensure a cleaner, more native experience.
-- **Precise Alignment**: Refined the dropdown's positioning to be vertically centered/baseline-aligned with the "Ratios" header.
+- **Simplified UI**: Focused the interface on core financial data, removing redundant custom ratio components.
+- **Precise Alignment**: Refined layout of headers and dropdowns for a more native Screener.in integration.
 - **Default Data Capture**: Implemented a "Read Phase" to capture Screener's original default ratios from the DOM before rendering custom templates, preventing data loss.
 - **Strategy Scoping**: `getMetrics` (for aggregate stats like Median/Avg) is intentionally restricted to `ListStrategy` (Latest Results) to maintain layout integrity on standard table-based pages.
 
 ### Fixed
+- **Quarterly Analysis Scrolling**: Injected "Earnings Day" and "Reaction" rows now have their first column correctly frozen when scrolling horizontally, fixing an issue where they would scroll off-screen.
 - **Dark Mode Dropdown**: Resolved an issue where the dropdown background remained white in dark mode.
 - **Zero-Value Ratios**: Fixed a bug where calculated ratios would show 0 if default values weren't captured correctly.
-- **UI Encroachment**: Fixed layout issues where text would overlap with dropdown arrows.
-- **Column Alignment**: Ensured the first column in Ratios and Quarterly Analysis tables is consistently left-aligned using explicit CSS.
+- **Layout Stability**: Resolved overlap and alignment issues in Ratios and Quarterly Analysis tables.
 
 ## [5.0.0] - 2026-02-09
 ### Added
@@ -93,56 +94,12 @@ All notable changes to this project will be documented in this file.
 - **Rate Limiting**: Enhanced global backoff manager with persistent status feedback in the popup UI.
 
 ### Fixed
-- **Robust Table Detection**: Improved selection logic for Superinvestor pages to avoid mis-targeting summary tables.
-- **UI Cleanups**: Removed redundant "Count" columns and "Analyzing" status bars for a more native feel.
-- **Security**: Obscured developer email in git configuration.
-
-## [3.0.0] - 2026-02-07
-### Major Changes
-- **Concalls Support**: Extended the industry filter functionality to `concalls/` and `concalls/upcoming/` pages.
-- **Documentation**: Updated README with supported pages and superuser tips.
-
-### Added
-- **Aggregate Stats (v1.10.0)**:
-    - Added a statistics container to the *Latest Results* page showing Median, Average, and Standard Deviation for Sales, EBITDA, Net Profit, and EPS.
-    - Implemented `getMetrics` to parse localized numeric formats (e.g., "⇡ 14%") from the data table.
-    - Added a helper text to the Industry Filter widget explaining that other filters clear the selection.
-- **Portfolio Analysis**:
-    - Experimental feature to analyze portfolio value on *People* pages.
-
-### Changed
-- **UI Improvements**:
-    - Moved the stats container to the top of the results list for better visibility.
-    - Updated CSS to match Screener.in's native Light/Dark theme (removed yellow alert style).
-    - Replaced "Range" with "Standard Deviation" in stats.
-    - Removed redundant "Count" column from the stats grid.
-    - Improved alignment of the "Scan All Pages" button and validation text.
-    - Added warning icon (using native `icon-info`) next to the "By Industry" header.
-
-### Removed
-- **Screens Support**: Removed support for `screens/*` pages as it was not a scheduled feature.
-
-## [2.0.1] - 2026-02-07
-### Added
-- **License**: Added MIT LICENSE file.
-
-### Documentation
-- Updated `README.md` to accurately reflect v2.0.0 features (Deep Scanning, Native Sidebar, Specialized Strategies).
+- **UI Cleanups**: Removed redundant status bars and counters for a more native feel.
 
 ## [2.0.0] - 2026-02-07
-
 ### Major Changes
-- **Specialized DOM Strategies**: Completely replaced the experimental "Universal Strategy" with robust, page-specific strategies:
-  - `TableStrategy`: Handles standard data tables (e.g., Upcoming Results).
-  - `ListStrategy`: Handles complex list/data-pair layouts (e.g., Latest Results).
-- **Deep Scanning**: Implemented "Scan All Pages" functionality that successfully adopts both company headers and financial data tables across pages.
-- **Layout Stabilization**: Fixed flexbox layout corruptions on Upcoming Results by targeting specific card containers for UI injection.
-
-### Added
-- **Native Sidebar Widget**: A "By Industry" dropdown that integrates seamlessly with Screener's sidebar.
-- **Cleanup Logic**: Robust removal of deep-fetched rows when toggling filters.
-
-### Fixed
-- **Rendering Bugs**: Solved issues where financial data tables were missing from scanned results.
-- **UI Distortion**: Fixed status bar appearing as a side column on flex-layout pages.
+- **Specialized DOM Strategies**: Replaced experimental "Universal Strategy" with robust, page-specific strategies (`TableStrategy`, `ListStrategy`).
+- **Deep Scanning**: Implemented "Scan All Pages" functionality for both company headers and financial data tables.
+- **Native Sidebar Widget**: Integrated "By Industry" dropdown seamlessly into Screener's sidebar.
+- **Improved Layouts**: Resolved flexbox distortions and stabilized UI injection on data-heavy pages.
 

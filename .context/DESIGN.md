@@ -7,7 +7,7 @@
 | **Manifest V3 Setup** | ✅ Done | `manifest.json` configured with storage permissions. |
 | **Industry Scraping** | ✅ Done | `src/background/background.js` scrapes `/market/` with rate limiting. |
 | **Local Storage** | ✅ Done | Data stored as `stockMap` (Symbol → Basic Industry) and `industryHierarchy` (Basic Industry → {macro, sector, industry, basicIndustry}). |
-| **Popup UI** | ✅ Done | Simple interface to trigger scrape and view progress. |
+| **Popup UI** | ❌ Removed | Removed as background fetch is now instantaneous from a static JSON. |
 | **Filter Injection** | ✅ Done | Injects into `.change-list-filter` (Sidebar) on `/upcoming-results/`, `/results/latest/`, and `/concalls/`. |
 | **Client-side Filtering** | ✅ Done | Toggles `display`. |
 | **Pagination Support** | ✅ Done | "Deep Scan": Robustly fetches next pages for both Table and List views; handles complex DOM adoption. |
@@ -20,14 +20,14 @@
 | **Multi-Level Hierarchy Search** | ✅ Done | Extracts NSE's 4-level classification from breadcrumb navigation during scraping. Users can search by any level (Macro/Sector/Industry/Basic Industry). Each dropdown item displays full hierarchy path for context. |
 | **Industry Column** | ✅ Done | Injects "Industry" column into *Upcoming Results* table. Populates from local cache. Hides when filtered. |
 | **Company Ratios** | ✅ Done | Re-implemented ratios widget on `/company/` pages. Features categorized templates and native-aligned dropdown. |
-| **Add earnings day reaction...**| ✅ Done | Fetches quarterly filing dates and historical prices from NSE to compute reactions (Day of, Next Day, 1 Week). |
+| **Add earnings day reaction...**| ✅ Done | Fetches quarterly filing dates and historical prices from NSE to compute reactions. 'Reaction' row is a collapsible toggle for 'Next Day/Week'. |
 
 ## UX Decisions
 - **Lazy Load vs. Pre-fetch**: Switched to "Global Pre-fetch" (Warm-up) strategy.
 - **Rate Limiting**: 
   - **Dynamic Backoff**: Starts at 5s, grows by 2x per retry (Global Memory).
   - **Slow Decay**: Level decays by 0.05 per success to prevent rapid oscillation.
-  - **Visibility**: Popup displays### 3. Quarterly Analysis & Price Reactions
+### 3. Quarterly Analysis & Price Reactions
 - **Goal**: Provide immediate context on how the market reacted to earnings announcements.
 - **Reaction Logic**:
     - **Reaction Date (T)**:
