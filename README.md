@@ -47,6 +47,8 @@ A powerful Chrome Extension that adds high-impact features to India's most belov
 - **Dark Mode Support**: Adaptive UI that matches Screener.in's native Light and Dark themes instantly using CSS variables.
 - **Native Experience**: Clean integration, in line with screener's beloved UI/UX.
 
+### Upcoming: Buyback helpers - CMP, Return %, IRR % for the buyback table
+
 ## 🛠️ Installation
 
 1.  **Clone/Download** this repository.
