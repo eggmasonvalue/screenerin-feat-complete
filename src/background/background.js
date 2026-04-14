@@ -67,11 +67,11 @@ async function fetchWithBackoff(url, retries = 3) {
  * @param {string} url
  * @returns {Promise<{text: string | null, etag: string | null, status: number}>}
  */
-async function fetchSmart(url) {
+async function fetchSmart(url, options = {}) {
     try {
         const storage = await chrome.storage.local.get(['lastETag']);
         const headers = {};
-        if (storage.lastETag) {
+        if (!options.skipEtag && storage.lastETag) {
             headers['If-None-Match'] = storage.lastETag;
         }
 
@@ -102,14 +102,23 @@ async function fetchSmart(url) {
  * Builds the complete industry database
  * @param {Function} sendProgress Callback to send status updates
  */
-async function buildDatabase() {
+async function buildDatabase(options = {}) {
     try {
         console.log("Starting database build...");
 
-        const result = await fetchSmart(INDUSTRY_DATA_URL);
+        const cached = await chrome.storage.local.get(['stockMap', 'industryHierarchy']);
+        const hasCachedData = !!(cached.stockMap && Object.keys(cached.stockMap).length && cached.industryHierarchy && Object.keys(cached.industryHierarchy).length);
+        const forceFetch = options.force === true || !hasCachedData;
+
+        const result = await fetchSmart(INDUSTRY_DATA_URL, { skipEtag: forceFetch });
 
         if (result.status === 304) {
             // Data hasn't changed
+            if (!hasCachedData) {
+                console.warn("Database build skipped 304 response because local cache is empty. Forcing a full refresh.");
+                return buildDatabase({ force: true });
+            }
+
             await chrome.storage.local.set({ lastUpdated: Date.now() });
             return;
         }
@@ -168,13 +177,17 @@ async function buildDatabase() {
     }
 }
 
+async function ensureDatabase() {
+    return buildDatabase();
+}
+
 // Auto-Fetch Logic
 const ALARM_NAME = "check_industry_updates";
 
 // Check for updates on startup
 chrome.runtime.onStartup.addListener(() => {
     console.log("Extension Startup: Triggering update check.");
-    buildDatabase();
+    ensureDatabase();
 });
 
 // Create periodic alarm (e.g., once every 24 hours)
@@ -182,12 +195,14 @@ chrome.runtime.onInstalled.addListener(() => {
     chrome.alarms.create(ALARM_NAME, {
         periodInMinutes: 1440 // 24 hours
     });
+
+    ensureDatabase();
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === ALARM_NAME) {
         console.log("Alarm Triggered: Checking for updates.");
-        buildDatabase();
+        ensureDatabase();
     }
 });
 
@@ -213,6 +228,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             })
             .catch(err => sendResponse({ error: err.message }));
         return true; // Keep channel open
+    } else if (request.action === "ensureIndustryData") {
+        ensureDatabase()
+            .then(() => sendResponse({ ok: true }))
+            .catch(err => sendResponse({ error: err.message }));
+        return true;
     }
     return true; // Keep channel open
 });

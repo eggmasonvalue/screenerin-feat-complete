@@ -5,6 +5,8 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 ### Changed
 - **License Upgrade**: Re-licensed the project from MIT to **GNU GPL 3.0** to ensure long-term freedom and copyleft protection for all users and contributors.
+### Fixed
+- **Industry Cache Bootstrap**: The extension now rebuilds the industry database when local storage is empty, even if an old `ETag` is still present, so the filter UI no longer gets stuck at "No industry data found."
 ### Improved
 - **Interactive Quarterly Analysis**: Made the "Reaction" row in the Quarterly Analysis section a collapsible element (with a '+' / '&minus;' toggle) that controls the visibility of the "Next Day" and "Next Week" rows. Polished to match native Screener.in collapsible behavior (blue toggle on the right, clickable labels).
 - **Professional Financial Ratios**: Upgraded the Ratios Dashboard to professional analyst standards:

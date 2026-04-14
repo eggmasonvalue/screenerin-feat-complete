@@ -15,6 +15,37 @@ let quarterlyData = null; // Stores NSE-derived quarterly metrics
 
 const DELAY_BETWEEN_PAGES = 300;
 
+async function ensureIndustryDataCache() {
+    const hasData = (data) => data?.stockMap && Object.keys(data.stockMap).length > 0;
+
+    let data = await chrome.storage.local.get(['stockMap', 'industryHierarchy']);
+    if (hasData(data)) {
+        stockMap = data.stockMap;
+        industryHierarchy = data.industryHierarchy || {};
+        return true;
+    }
+
+    try {
+        await new Promise((resolve) => {
+            chrome.runtime.sendMessage({ action: "ensureIndustryData" }, () => resolve());
+        });
+    } catch (err) {
+        console.warn("Screener Filter: Failed to trigger industry data refresh.", err);
+    }
+
+    for (let attempt = 0; attempt < 10; attempt++) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+        data = await chrome.storage.local.get(['stockMap', 'industryHierarchy']);
+        if (hasData(data)) {
+            stockMap = data.stockMap;
+            industryHierarchy = data.industryHierarchy || {};
+            return true;
+        }
+    }
+
+    return false;
+}
+
 // -----------------------------------------------------
 // Strategies
 // -----------------------------------------------------
@@ -445,15 +476,13 @@ async function init() {
             return;
         }
 
-        const data = await chrome.storage.local.get(['stockMap', 'industryHierarchy']);
-        if (!data.stockMap) {
+        const hasIndustryData = await ensureIndustryDataCache();
+        if (!hasIndustryData) {
             console.log("Screener Filter: No industry data found.");
             // Even if no industry data, we might want to allow other features if added later
             // But for now, just return
             return;
         }
-        stockMap = data.stockMap;
-        industryHierarchy = data.industryHierarchy || {};
 
         // Determine Strategy
         if (ListStrategy.matches(document)) {

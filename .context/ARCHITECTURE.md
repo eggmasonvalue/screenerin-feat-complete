@@ -10,11 +10,13 @@
   - Manages rate-limited fetching queue.
   - Stores the resulting `stockMap` (Symbol → Basic Industry) and `industryHierarchy` (Basic Industry → {macro, sector, industry, basicIndustry}) in `chrome.storage.local`.
   - **Global Backoff Manager**: Maintains a persistent rate-limiting backoff level and duration across all background and content script requests.
+  - **Cache Self-Healing**: Rebuilds the industry database on startup, install, alarm, and on-demand message requests. If the cache is empty, it bypasses stale `ETag` state and forces a full refresh.
 
 ### 2. Content Script (`src/content/content.js`)
 - **Role**: UI Injector & Interactor.
 - **Responsibility**:
   - Runs on `screener.in/upcoming-results/*` and `screener.in/results/latest/*`.
+  - **Bootstrap Guard**: Checks local storage for the industry cache, triggers an on-demand background rebuild when missing, and retries before aborting the page feature.
   - Injects **Custom Combobox** (Searchable Dropdown) into Sidebar with **Multi-Level Hierarchy Search**:
     - Loads both `stockMap` and `industryHierarchy` from storage.
     - Searches across all 4 hierarchy levels (macro, sector, industry, basicIndustry) for maximum discoverability.

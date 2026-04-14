@@ -4,6 +4,7 @@
 
 | Feature | Status | Implementation Details |
 | :--- | :--- | :--- |
+| **Cache Recovery** | Done | Background rebuilds the industry cache on demand and forces a full refresh when `stockMap` is missing but `ETag` metadata is still present. |
 | **Manifest V3 Setup** | ✅ Done | `manifest.json` configured with storage permissions. |
 | **Industry Scraping** | ✅ Done | `src/background/background.js` scrapes `/market/` with rate limiting. |
 | **Local Storage** | ✅ Done | Data stored as `stockMap` (Symbol → Basic Industry) and `industryHierarchy` (Basic Industry → {macro, sector, industry, basicIndustry}). |
@@ -24,6 +25,7 @@
 
 ## UX Decisions
 - **Lazy Load vs. Pre-fetch**: Switched to "Global Pre-fetch" (Warm-up) strategy.
+- **Cache Bootstrap**: Content scripts now trigger a background rebuild and retry when the local industry cache is empty, instead of exiting immediately.
 - **Rate Limiting**: 
   - **Dynamic Backoff**: Starts at 5s, grows by 2x per retry (Global Memory).
   - **Slow Decay**: Level decays by 0.05 per success to prevent rapid oscillation.
@@ -57,3 +59,5 @@
     - **Dynamic Tax**: ROIC adjusts based on actual trailing tax rates.
     - **Net Capex**: FCF now accounts for both asset purchases and sales to determine net cash outflow.
 - **Strategy Scoping**: `getMetrics` (for aggregate stats like Median/Avg) is intentionally restricted to `ListStrategy` (Latest Results) to maintain layout integrity on standard table-based pages.
+
+
