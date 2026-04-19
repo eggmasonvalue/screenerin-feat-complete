@@ -47,7 +47,9 @@ A powerful Chrome Extension that adds high-impact features to India's most belov
 - **Dark Mode Support**: Adaptive UI that matches Screener.in's native Light and Dark themes instantly using CSS variables.
 - **Native Experience**: Clean integration, in line with screener's beloved UI/UX.
 
-### Upcoming: Buyback helpers - CMP, Return %, IRR % for the buyback table
+### Upcoming: 
+1. Buyback helpers - CMP, Return %, IRR % for the buyback table
+2. View corresponding quarter results date for the last 3 years in the Upcoming results table - identify companies reporting early/late relative to history at a glance - perhaps indicative of a beat/miss
 
 ## 🛠️ Installation
 
