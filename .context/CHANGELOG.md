@@ -3,6 +3,8 @@
 All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
+### Added
+- **Prior Year Earnings Dates**: Added three new columns ("1Yr Ago", "2Yr Ago", "3Yr Ago") to the "Upcoming Results" table. Dynamically fetches past filing dates matching the target quarter to help contextualize upcoming reporting schedules.
 ### Changed
 - **License Upgrade**: Re-licensed the project from MIT to **GNU GPL 3.0** to ensure long-term freedom and copyleft protection for all users and contributors.
 ### Fixed

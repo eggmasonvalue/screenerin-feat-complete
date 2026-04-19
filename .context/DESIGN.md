@@ -22,6 +22,7 @@
 | **Industry Column** | ✅ Done | Injects "Industry" column into *Upcoming Results* table. Populates from local cache. Hides when filtered. |
 | **Company Ratios** | ✅ Done | Re-implemented ratios widget on `/company/` pages. Features categorized templates and native-aligned dropdown. |
 | **Add earnings day reaction...**| ✅ Done | Fetches quarterly filing dates and historical prices from NSE to compute reactions. 'Reaction' row is a collapsible toggle for 'Next Day/Week'. |
+| **Prior Year Earnings Dates** | ✅ Done | Automatically figures out the context quarter for upcoming results and fetches exact previous year filing dates, injecting columns seamlessly without rate limiting hits. |
 
 ## UX Decisions
 - **Lazy Load vs. Pre-fetch**: Switched to "Global Pre-fetch" (Warm-up) strategy.

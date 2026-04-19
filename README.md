@@ -43,13 +43,16 @@ A powerful Chrome Extension that adds high-impact features to India's most belov
 - **Holiday-Aware**: Robust logic handles announcements on market holidays and weekends by automatic shifting to the next trading day.
 - **Batch Optimized**: High-performance data fetching uses batching to ensure stability and accuracy across many years of history.
 
-### 6. Seamless UI/UX
+### 6. Prior Year Earnings Dates in Upcoming Results table: 
+Results dates for the period for the prior three years is now available at-a-glance in the "Upcoming Results" table. 
+**Instantly identify if the company's current reporting date is different from cadence - too eager? hiding?**
+
+### 7. Seamless UI/UX
 - **Dark Mode Support**: Adaptive UI that matches Screener.in's native Light and Dark themes instantly using CSS variables.
 - **Native Experience**: Clean integration, in line with screener's beloved UI/UX.
 
 ### Upcoming: 
 1. Buyback helpers - CMP, Return %, IRR % for the buyback table
-2. View corresponding quarter results date for the last 3 years in the Upcoming results table - identify companies reporting early/late relative to history at a glance - perhaps indicative of a beat/miss
 
 ## 🛠️ Installation
 

@@ -185,10 +185,55 @@ const TableStrategy = {
                     }
                 }
                 td.style.display = '';
-            } else if (td) {
+                        } else if (td) {
                 td.style.display = 'none';
             }
         });
+    },
+
+    updatePriorYearColumns: () => {
+        if (!window.location.pathname.includes('/upcoming-results/')) return;
+        const table = document.querySelector('.responsive-holder table') || document.querySelector('table.data-table');
+        if (!table) return;
+
+        const theadRow = table.querySelector('thead tr');
+        if (theadRow && !theadRow.querySelector('.ext-prioryear-1')) {
+            const labels = ['1Yr Ago', '2Yr Ago', '3Yr Ago'];
+            labels.forEach((text, i) => {
+                const th = document.createElement('th');
+                th.className = `ext-prioryear-${i+1}`;
+                const link = document.createElement('a');
+                link.href = "javascript:void(0)";
+                link.innerText = text;
+                link.style.pointerEvents = "none";
+                link.style.cursor = "default";
+                link.style.textDecoration = "none";
+                th.appendChild(link);
+                th.style.textAlign = 'left';
+                theadRow.appendChild(th);
+            });
+        }
+        
+        // Initialize cells for existing rows
+        const rows = table.querySelectorAll('tbody tr');
+        rows.forEach(row => TableStrategy.injectPriorYearCells(row, null));
+    },
+    
+    injectPriorYearCells: (row, results) => {
+        for (let i = 0; i < 3; i++) {
+            let td = row.querySelector(`.ext-prioryear-${i+1}`);
+            if (!td) {
+                td = document.createElement('td');
+                td.className = `ext-prioryear-${i+1} nowrap`;
+                td.style.textAlign = 'left';
+                row.appendChild(td);
+            }
+            if (results) {
+                td.innerText = results[i];
+            } else if (!td.innerText || td.innerText === '') {
+                td.innerText = '...';
+            }
+        }
     }
 };
 
@@ -457,6 +502,153 @@ function formatCurrency(val) {
     });
 }
 
+
+
+// -----------------------------------------------------
+// Prior Year Results Logic
+// -----------------------------------------------------
+
+const PriorYearFetcher = {
+    monthPatterns: {
+        0: ['jan', 'january', '01'],
+        1: ['feb', 'february', '02'],
+        2: ['mar', 'march', '03'],
+        3: ['apr', 'april', '04'],
+        4: ['may', '05'],
+        5: ['jun', 'june', '06'],
+        6: ['jul', 'july', '07'],
+        7: ['aug', 'august', '08'],
+        8: ['sep', 'september', '09'],
+        9: ['oct', 'october', '10'],
+        10: ['nov', 'november', '11'],
+        11: ['dec', 'december', '12']
+    },
+    
+    // Map current result month index (0-11) to target toDate month index (0-11)
+    targetQuarterMap: {
+        0: 11, 1: 11, 2: 11, // Jan, Feb, Mar -> Dec
+        3: 2, 4: 2, 5: 2,   // Apr, May, Jun -> Mar
+        6: 5, 7: 5, 8: 5,   // Jul, Aug, Sep -> Jun
+        9: 8, 10: 8, 11: 8  // Oct, Nov, Dec -> Sep
+    },
+
+    extractMonthIndex: (dateStr) => {
+        if (!dateStr) return null;
+        const normalized = dateStr.toLowerCase();
+        for (const [idx, patterns] of Object.entries(PriorYearFetcher.monthPatterns)) {
+            for (const pattern of patterns) {
+                // Support multiple patterns matching
+                if (new RegExp(`\\b${pattern}\\b`, 'i').test(normalized)) {
+                    return parseInt(idx);
+                }
+            }
+        }
+        return null;
+    },
+
+    fetchAndInjectDates: async () => {
+        if (!activeStrategy || activeStrategy.name !== 'TableStrategy') return;
+        if (!window.location.pathname.includes('/upcoming-results/')) return;
+        
+        const items = activeStrategy.getItems(document).filter(item => 
+            item.style.display !== 'none' && !item.dataset.priorYearsFetched
+        );
+        
+        const chunkSize = 3;
+        for (let i = 0; i < items.length; i += chunkSize) {
+            const chunk = items.slice(i, i + chunkSize);
+            await Promise.all(chunk.map(async (row) => {
+                row.dataset.priorYearsFetched = "true";
+                const symbol = activeStrategy.getSymbol(row);
+                if (!symbol) return;
+                
+                // Usually the result date is before our newly injected cols or it used to be the last one
+                const resultDateCell = row.querySelector('.field-result_date, td.nowrap');
+                if (!resultDateCell) return;
+                
+                const monthIdx = PriorYearFetcher.extractMonthIndex(resultDateCell.innerText);
+                if (monthIdx === null) {
+                    activeStrategy.injectPriorYearCells(row, ['-', '-', '-']);
+                    return;
+                }
+                
+                const targetMonthIdx = PriorYearFetcher.targetQuarterMap[monthIdx];
+                
+                try {
+                    const legacyUrl = `https://www.nseindia.com/api/corporates-financial-results?index=equities&symbol=${symbol}&period=Quarterly`;
+                    const integratedUrl = `https://www.nseindia.com/api/integrated-filing-results?index=equities&symbol=${symbol}&period_ended=all&type=Integrated%20Filing-%20Financials`;
+
+                    const [legacyData, integratedData] = await Promise.all([
+                        new Promise(resolve => chrome.runtime.sendMessage({ action: "fetchNSEData", url: legacyUrl }, res => resolve(res?.data || []))),
+                        new Promise(resolve => chrome.runtime.sendMessage({ action: "fetchNSEData", url: integratedUrl }, res => resolve(res?.data?.data || [])))
+                    ]);
+                    
+                    const normalizeDate = (dStr) => {
+                        if (!dStr) return null;
+                        const parts = dStr.includes(' ') ? dStr.split(' ')[0].split('-') : dStr.split('-');
+                        if (parts.length !== 3) return null;
+                        if (parts[0].length === 4) return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+                        const mStr = parts[1].toLowerCase();
+                        const mIdx = PriorYearFetcher.extractMonthIndex(mStr);
+                        if (mIdx !== null) return new Date(parseInt(parts[2]), mIdx, parseInt(parts[0]));
+                        if (!isNaN(parseInt(mStr))) return new Date(parseInt(parts[2]), parseInt(mStr) - 1, parseInt(parts[0]));
+                        return null;
+                    };
+
+                    const combined = [];
+                    (legacyData || []).forEach(r => {
+                        const d = normalizeDate(r.toDate || r.reportingPeriod);
+                        const fd = normalizeDate(r.filingDate || r.broadCastDate || r.exchdisstime);
+                        if (d && fd) combined.push({ toDate: d, filingDate: fd, source: 'legacy' });
+                    });
+                    
+                    (integratedData || []).forEach(r => {
+                        const d = normalizeDate(r.qe_Date);
+                        const fd = normalizeDate(r.broadcast_Date || r.revised_Date);
+                        if (d && fd) combined.push({ toDate: d, filingDate: fd, source: 'integrated' });
+                    });
+                    
+                    const filtered = combined.filter(r => r.toDate.getMonth() === targetMonthIdx);
+                    
+                    // Deduplicate by year of toDate
+                    const yearMap = {};
+                    filtered.forEach(r => {
+                        const y = r.toDate.getFullYear();
+                        if (!yearMap[y] || yearMap[y].filingDate < r.filingDate) {
+                            yearMap[y] = r;
+                        }
+                    });
+                    
+                    const sorted = Object.values(yearMap).sort((a, b) => b.toDate - a.toDate);
+                    const top3 = sorted.slice(0, 3);
+                    
+                    // Format output
+                    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                    const formatFD = (r) => {
+                        if (!r) return '-';
+                        return `${r.filingDate.getDate().toString().padStart(2, '0')} ${monthNames[r.filingDate.getMonth()]}`;
+                    };
+                    
+                    const results = [
+                        formatFD(top3[0]),
+                        formatFD(top3[1]),
+                        formatFD(top3[2])
+                    ];
+                    
+                    activeStrategy.injectPriorYearCells(row, results);
+                    
+                } catch (e) {
+                    console.error(`PriorYearFetcher Error for ${symbol}`, e);
+                    activeStrategy.injectPriorYearCells(row, ['Err', 'Err', 'Err']);
+                }
+            }));
+            
+            // tiny delay between chunks
+            await new Promise(r => setTimeout(r, 600));
+        }
+    }
+};
+
 // -----------------------------------------------------
 // Core Logic
 // -----------------------------------------------------
@@ -501,8 +693,14 @@ async function init() {
             activeStrategy.updateIndustryColumn(true);
         }
 
+        if (activeStrategy.updatePriorYearColumns) {
+            activeStrategy.updatePriorYearColumns();
+        }
+
         injectSidebarUI();
         initMobileObserver(); // Add observer for mobile modal
+
+        PriorYearFetcher.fetchAndInjectDates();
 
     } catch (err) {
         console.error("Screener Filter Init Error:", err);
@@ -685,6 +883,7 @@ async function applyFilter() {
     });
 
     updateFilterStatus(visibleCount);
+    PriorYearFetcher.fetchAndInjectDates();
 }
 
 function showAllRows() {
@@ -695,6 +894,7 @@ function showAllRows() {
     document.querySelector('.screener-scanner-status')?.remove();
     document.querySelector('.paginator')?.style.setProperty('display', '', 'important');
     isFetchingAll = false;
+    PriorYearFetcher.fetchAndInjectDates();
 }
 
 function updateFilterStatus(currentMatches, isComplete = false) {
@@ -910,6 +1110,10 @@ async function startDeepFetch(statusEl) {
         isFetchingAll = false;
         // Re-render the full status UI by passing true for isComplete
         updateFilterStatus(totalMatches, true);
+        if (activeStrategy.updatePriorYearColumns) {
+            activeStrategy.updatePriorYearColumns();
+        }
+        PriorYearFetcher.fetchAndInjectDates();
     }
 }
 
